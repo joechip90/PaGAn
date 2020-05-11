@@ -3,7 +3,7 @@
 # Initialise a list of distributions that are defined in this file.  Note that the distributions are not
 # registered just yet (that is done at the end of the source file).
 distributionList <- list(
-  ## 1.1.1. Define the dbetabin doistribution ----
+  ## 1.1.1. Define the dbetabin distribution ----
   dbetabin = list(
     # Define the BUGS code to call the distribution
     BUGSdist = "dbetabin(shape1, shape2, size, mean, prec)",

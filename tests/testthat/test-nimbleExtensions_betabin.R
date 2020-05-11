@@ -49,5 +49,5 @@ test_that("beta-binomial simulation function gives samples with the correct dist
   }, MARGIN = 1)
   # By chance roughly 5% of the chi-squared probabilities will be < 0.05. If more than 10% are then it is likely that there is a problems with
   # simulation function
-  expect_less_than(sum(chiSqP < 0.05) / length(chiSqP), 0.1)
+  expect_lt(sum(chiSqP < 0.05) / length(chiSqP), 0.1)
 })
