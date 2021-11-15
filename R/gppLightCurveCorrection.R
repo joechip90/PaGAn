@@ -10,13 +10,13 @@
 #' @param lightValues A character scalar of the column name in \code{data} that represents
 #' the values of PAR.  Alternatively \code{lightValues} can be a numeric vector with length
 #' equal to the number of rows in \code{data} which gives the PAR values directly
-#' @param yAssymModel A \code{formula} object giving the relationship between the y-assymptote
+#' @param yAsymModel A \code{formula} object giving the relationship between the y-assymptote
 #' and a set of covariates.  The left-hand term of the formula should be the term representing
 #' GPP.  If the left-hand term is missing then GPP is searched for in the other model
-#' formulas \code{xAssymModel} and \code{multiplierModel}.  This parameter can also a be a
+#' formulas \code{xAsymModel} and \code{multiplierModel}.  This parameter can also a be a
 #' numeric \code{vector}, in which case the model will be replaced by an 'offset' constant with
 #' values given in the vector
-#' @param xAssymModel A \code{formula} object giving the relationship between the x-assymptote
+#' @param xAsymModel A \code{formula} object giving the relationship between the x-assymptote
 #' and a set of covariates.  The left-hand term of the formula should be the term representing
 #' GPP.  If the left-hand term is missing then GPP is searched for in the other model
 #' formula \code{multiplierModel}.  This parameter can also a be a
@@ -105,8 +105,8 @@
 gppLightCurveCorrection <- function(
   inputData,
   lightValues,
-  yAssymModel,
-  xAssymModel,
+  yAsymModel,
+  xAsymModel,
   multiplierModel = 1.0,
   indirectComponents = NULL,
   regCoeffs = "none",
@@ -138,10 +138,10 @@ gppLightCurveCorrection <- function(
   # Sanity check the MCMC parameters
   inMCMCParameters <- sanityCheckMCMCParameters(mcmcParams)
   # Retrieve the sub-model formulas as strings
-  yAssymModelText <- ""
-  yAssymModelFormNew <- NULL
-  xAssymModelText <- ""
-  xAssymModelFormNew <- NULL
+  yAsymModelText <- ""
+  yAsymModelFormNew <- NULL
+  xAsymModelText <- ""
+  xAsymModelFormNew <- NULL
   multiplierModelText <- ""
   multiplierModelFormNew <- NULL
   # Function to tidy long formulas
@@ -149,19 +149,19 @@ gppLightCurveCorrection <- function(
     # Remove unneccessary space
     gsub("\\s+", " ", paste(inForm, collapse = ""), perl = TRUE)
   }
-  if(!is.numeric(yAssymModel)) {
-    yAssymModelText <- tryCatch(tidyLongFormula(deparse(substitute(yAssymModel))), error = function(err) {
+  if(!is.numeric(yAsymModel)) {
+    yAsymModelText <- tryCatch(tidyLongFormula(deparse(substitute(yAsymModel))), error = function(err) {
       stop("error encountered during processing of y-assymptote sub-model: ", err)
     })
-    yAssymModelFormNew <- tryCatch(as.formula(paste("~ ", gsub("^.*~\\s*", "", yAssymModelText, perl = TRUE), sep = "")), error = function(err) {
+    yAsymModelFormNew <- tryCatch(as.formula(paste("~ ", gsub("^.*~\\s*", "", yAsymModelText, perl = TRUE), sep = "")), error = function(err) {
       stop("error encountered during processing of y-assymptote sub-model: ", err)
     })
   }
-  if(!is.numeric(xAssymModel)) {
-    xAssymModelText <- tryCatch(tidyLongFormula(deparse(substitute(xAssymModel))), error = function(err) {
+  if(!is.numeric(xAsymModel)) {
+    xAsymModelText <- tryCatch(tidyLongFormula(deparse(substitute(xAsymModel))), error = function(err) {
       stop("error encountered during processing of x-assymptote sub-model: ", err)
     })
-    xAssymModelFormNew <- tryCatch(as.formula(paste("~ ", gsub("^.*~\\s*", "", xAssymModelText, perl = TRUE), sep = "")), error = function(err) {
+    xAsymModelFormNew <- tryCatch(as.formula(paste("~ ", gsub("^.*~\\s*", "", xAsymModelText, perl = TRUE), sep = "")), error = function(err) {
       stop("error encountered during processing of x-assymptote sub-model: ", err)
     })
   }
@@ -174,7 +174,7 @@ gppLightCurveCorrection <- function(
     })
   }
   # Retrieve the GPP variable from the model specifications
-  gppVarName <- gsub("^\\s*", "", gsub("\\s*~.*$", "", c(yAssymModelText, xAssymModelText, multiplierModelText), perl = TRUE), perl = TRUE)
+  gppVarName <- gsub("^\\s*", "", gsub("\\s*~.*$", "", c(yAsymModelText, xAsymModelText, multiplierModelText), perl = TRUE), perl = TRUE)
   gppVarName <- unique(gppVarName[gppVarName != ""])
   if(length(gppVarName) <= 0) {
     stop("error encountered during processing the model specification for the sub-models: no response variable given in any formula")
@@ -252,18 +252,18 @@ gppLightCurveCorrection <- function(
     )
   }
   # Create the covariate nodes for each of the sub-components of the light correction model
-  yAssymModelNodes <- NULL
-  xAssymModelNodes <- NULL
+  yAsymModelNodes <- NULL
+  xAsymModelNodes <- NULL
   multiplierModelNodes <- NULL
-  if(!is.null(yAssymModelFormNew)) {
-    yAssymModelNodes <- linearModelToCovariateNodeDefinition(yAssymModelFormNew, inData, "identity", regCoeffs, "logyAssym")
+  if(!is.null(yAsymModelFormNew)) {
+    yAsymModelNodes <- linearModelToCovariateNodeDefinition(yAsymModelFormNew, inData, "identity", regCoeffs, "logyAssym")
   } else {
-    yAssymModelNodes <- modelConstComponents(log(as.numeric(yAssymModel)), nrow(inData), "logyAssym")
+    yAsymModelNodes <- modelConstComponents(log(as.numeric(yAsymModel)), nrow(inData), "logyAssym")
   }
-  if(!is.null(xAssymModelFormNew)) {
-    xAssymModelNodes <- linearModelToCovariateNodeDefinition(xAssymModelFormNew, inData, "identity", regCoeffs, "logxAssym")
+  if(!is.null(xAsymModelFormNew)) {
+    xAsymModelNodes <- linearModelToCovariateNodeDefinition(xAsymModelFormNew, inData, "identity", regCoeffs, "logxAssym")
   } else {
-    xAssymModelNodes <- modelConstComponents(log(as.numeric(xAssymModel)), nrow(inData), "logxAssym")
+    xAsymModelNodes <- modelConstComponents(log(as.numeric(xAsymModel)), nrow(inData), "logxAssym")
   }
   if(!is.null(multiplierModelFormNew)) {
     multiplierModelNodes <- linearModelToCovariateNodeDefinition(multiplierModelFormNew, inData, "identity", regCoeffs, "logmultiplier")
@@ -316,10 +316,10 @@ gppLightCurveCorrection <- function(
   }
   # Aggregate all the nodes to create an entire model
   modelNodeDefinitions <- list(
-    inputData = c(yAssymModelNodes$inputData, xAssymModelNodes$inputData, multiplierModelNodes$inputData, extraNodes$inputData),
-    inputConstants = c(yAssymModelNodes$inputConstants, xAssymModelNodes$inputConstants, multiplierModelNodes$inputConstants, extraNodes$inputConstants),
-    stochasticNodeDef = c(yAssymModelNodes$stochasticNodeDef, xAssymModelNodes$stochasticNodeDef, multiplierModelNodes$stochasticNodeDef, extraNodes$stochasticNodeDef),
-    deterministicNodeDef = c(yAssymModelNodes$deterministicNodeDef, xAssymModelNodes$deterministicNodeDef, multiplierModelNodes$deterministicNodeDef, extraNodes$deterministicNodeDef)
+    inputData = c(yAsymModelNodes$inputData, xAsymModelNodes$inputData, multiplierModelNodes$inputData, extraNodes$inputData),
+    inputConstants = c(yAsymModelNodes$inputConstants, xAsymModelNodes$inputConstants, multiplierModelNodes$inputConstants, extraNodes$inputConstants),
+    stochasticNodeDef = c(yAsymModelNodes$stochasticNodeDef, xAsymModelNodes$stochasticNodeDef, multiplierModelNodes$stochasticNodeDef, extraNodes$stochasticNodeDef),
+    deterministicNodeDef = c(yAsymModelNodes$deterministicNodeDef, xAsymModelNodes$deterministicNodeDef, multiplierModelNodes$deterministicNodeDef, extraNodes$deterministicNodeDef)
   )
   ## 1.1.3. Run the model ----
   # Convert the model node definition to NIMBLE code

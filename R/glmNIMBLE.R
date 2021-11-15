@@ -74,9 +74,10 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
   modelNodeDefinitions <- linearModelToNodeDefinition(modelFormula, inputData, errorFamily, regCoeffs, modelSuffix)
   # Create the model code to run in NIMBLE
   modelCode <- nodeDefinitionToNIMBLECode(modelNodeDefinitions$stochasticNodeDef, modelNodeDefinitions$deterministicNodeDef)
-  # Create a set of initial values for the stochastic non-data nodes
+  # Retrieve the node names
   nonDataNodeNames <- names(modelNodeDefinitions$stochasticNodeDef)[!(names(modelNodeDefinitions$stochasticNodeDef) %in% names(modelNodeDefinitions$inputData))]
   predictionNodeNames <- names(modelNodeDefinitions$deterministicNodeDef)[grepl("^meanPred", names(modelNodeDefinitions$deterministicNodeDef), perl = TRUE)]
+  # Create a set of initial values for the stochastic non-data nodes
   initValues <- setNames(lapply(X = nonDataNodeNames, FUN = function(curName) {
     ifelse(grepl("Coeff$", curName, perl = TRUE), 0.0, 1.0)
   }), nonDataNodeNames)
@@ -164,6 +165,130 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
     predictionSummary = mcmcOutput$summary$all.chains[!(rownames(mcmcOutput$summary$all.chains) %in% nonDataNodeNames), ],
     WAIC = mcmcOutput$WAIC,
     DHARMaResiduals = residAnalysisOb,
-    parameterFigure = coeffPlot
+    parameterFigure = coeffPlot,
+    stochasticNodeDef = modelNodeDefinitions$stochasticNodeDef,
+    deterministicNodeDef = modelNodeDefinitions$deterministicNodeDef,
+    modelFormula = as.formula(modelFormula),
+    covSummaryStats = modelNodeDefinitions$covSummaryStats,
+    modelSuffix = processSuffix(modelSuffix)
+  )
+}
+
+predict.glmNIMBLE <- function(modelOb, newData, type = "link") {
+  # Import the model object
+  inGLM <- tryCatch(as.list(modelOb), error = function(err) {
+    stop("error encountered processing model object: object is not correct type")
+  })
+  # Retrieve the model formula
+  inModForm <- tryCatch(as.formula(inGLM$modelFormula), error = function(err) {
+    stop("error encountered processing model object: ", err)
+  })
+  # Retrieve the centre and scaling information
+  cenScaleInfo <- tryCatch(as.matrix(inGLM$covSummaryStats), error = function(err) {
+    stop("error encountered processing model object: ", err)
+  })
+  if(!all(c("mean", "sd") %in% rownames(cenScaleInfo))) {
+    stop("error encountered processing model object: centre and scale information is not correctly formatted")
+  }
+  # Import the new data
+  inData <- tryCatch(as.data.frame(newData), error = function(err) {
+    stop("error encountered processing prediction data frame: ", err)
+  })
+  # Centre and scale the new data according to the moment of the training data (if required)
+  inData <- as.data.frame(setNames(lapply(X = names(inData), FUN = function(curCol, inData, cenScaleInfo) {
+    outVec <- inData[, curCol]
+    if(curCol %in% colnames(cenScaleInfo)) {
+      if(all(!is.na(cenScaleInfo[, curCol]))) {
+        outVec <- (inData[, curCol] - cenScaleInfo["mean", curCol]) / cenScaleInfo["sd", curCol]
+      }
+    }
+    outVec
+  }, inData = inData, cenScaleInfo = cenScaleInfo), names(inData)))
+  # Retrieve the model suffix (if it has one)
+  curSuffix <- ""
+  if(!is.null(inGLM$modelSuffix)){
+    curSuffix <- inGLM$modelSuffix
+  }
+  # Retrieve the model matrix
+  inModForm <- as.formula(gsub("^.*~", "~", Reduce(paste, deparse(inModForm)), perl = TRUE))
+  curModelMatrix <- model.matrix(inModForm, model.frame(inModForm, data = inData, na.action = na.pass))
+  # Check whether an intercept term is present in the model matrix
+  hasIntercept <- 0 %in% attr(curModelMatrix, "assign")
+  if(hasIntercept) {
+    # Remove the intercept term from the model matrix if it exists
+    curModelMatrix <- curModelMatrix[, attr(curModelMatrix, "assign") != 0, drop = FALSE]
+  }
+  if(ncol(curModelMatrix) > 0) {
+    # Rename the model matrix covariates to NIMBLE-friendly names
+    colnames(curModelMatrix) <- paste(makeBUGSFriendlyNames(colnames(curModelMatrix)), curSuffix, sep = "")
+  }
+  # Retrieve the prediction node of the model
+  predNode <- inGLM$deterministicNodeDef
+  if(is.null(predNode)) {
+    stop("error encountered processing model object: deterministic node specification is missing")
+  }
+  if(!(paste("meanPred", curSuffix, sep = "") %in% names(predNode))) {
+    stop("error encountered processing model object: prediction node is missing")
+  }
+  predNode <- predNode[[paste("meanPred", curSuffix, sep = "")]]
+  # Retrieve the prediction specification text
+  modSpecText <- tryCatch(gsub(paste("[1:meanPred", curSuffix, "N]", sep = ""), "", as.character(predNode), fixed = TRUE), error = function(err) {
+    stop("error encountered processing model object: ", err)
+  })
+  if(is.null(inGLM$parameterSamples)) {
+    stop("error encountered processing model object: unable to retrieve parameter samples")
+  }
+  # Retrieve the samples of the parameters as a matrix
+  paramSamples <- NULL
+  if(class(inGLM$parameterSamples) == "mcmc") {
+    paramSamples <- as.data.frame(inGLM$parameterSamples)
+  } else {
+    paramSamples <- tryCatch(do.call(rbind, lapply(X = inGLM$parameterSamples, FUN = as.data.frame)), error = function(err) {
+      stop("error encountered processing model object: parameter samples are in an incorrect format")
+    })
+  }
+  # Retrieve the type of prediction to make
+  inType <- tryCatch(as.character(type), error = function(err) {
+    stop("error encountered processing prediction: invalid prediction type")
+  })
+  if(is.null(inType) || length(inType) <= 0) {
+    inType <- "link"
+  } else if(length(inType) > 1) {
+    warning("prediction type specification has length greater than zero: only the first element will be used")
+  }
+  if(!(inType %in% c("link", "response"))) {
+    stop("error encountered processing prediction: invalid prediction type")
+  }
+  # Retrieve the link specification
+  linkFunc <- tryCatch(as.character(attr(predNode, "linkFunction")), error = function(err) {
+    stop("error encountered processing model object: ", err)
+  })
+  if(is.null(linkFunc) || length(linkFunc) <= 0) {
+    stop("error encountered processing model object: link function for prediction node not specified")
+  } else if(length(linkFunc) > 1) {
+    warning("link function specification has length greater than zero: only the first element will be used")
+    linkFunc <- linkFunc[1]
+  }
+  if(!(linkFunc %in% unique(unlist(errorFamilies())))) {
+    stop("error encountered processing model object: invalid link function detected")
+  }
+  # Go through each of the rows of the model frame and calculate the predictions for each
+  predOut <- t(apply(X = curModelMatrix, MARGIN = 1, FUN = function(curRow, paramSamples, modSpecText, inType, linkFunc) {
+    # Evaluate the model using the current parameter and covarite values
+    preds <- eval(parse(text = modSpecText), envir = c(paramSamples, as.list(curRow)))
+    if(inType == "response") {
+      preds <- applyInverseLink(preds, linkFunc)
+    }
+    preds
+  }, paramSamples = as.list(paramSamples), modSpecText = modSpecText, inType = inType, linkFunc = linkFunc))
+  # Return the prediction samples alongside the summary statistics
+  list(
+    predictionMatrix = predOut,
+    summary = t(apply(X = predOut, MARGIN = 1, FUN = function(curRow) {
+      setNames(
+        c(mean(curRow), median(curRow), sd(curRow), quantile(curRow, c(0.025, 0.975))),
+        c("Mean", "Median", "St.Dev.", "95%CI_low", "95%CI_upp")
+      )
+    }))
   )
 }

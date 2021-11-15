@@ -250,6 +250,7 @@ linearModelToCovariateNodeDefinition <- function(modelFormula, inputData, linkFu
   centreAndScale <- function(inCovDataFrame) {
     outFrame <- as.data.frame(lapply(X = as.list(inCovDataFrame), FUN = function(curCol) {
       outVec <- curCol
+      # TODO: add in handling routines for binary covariates here
       if(!is.factor(outVec)) {
         if(is.character(outVec)) {
           outVec <- as.factor(outVec)
@@ -290,13 +291,23 @@ linearModelToCovariateNodeDefinition <- function(modelFormula, inputData, linkFu
   # Process the model suffix
   inSuffix <- processSuffix(modelSuffix)
   # Retrieve the model matrix
+  covMeanVals <- sapply(X = as.list(inData), FUN = function(curCol) {
+    outVal <- c(NA, NA)
+    # TODO: add in handling routines for binary covariates here
+    if(!is.factor(curCol) && !is.character(curCol)) {
+      outVal <- c(mean(curCol, na.rm = TRUE), sd(curCol, na.rm = TRUE))
+    }
+    names(outVal) <- c("mean", "sd")
+    outVal
+  })
+  colnames(covMeanVals) <- colnames(inData)
   curModelMatrix <- model.matrix(inFormula, model.frame(inFormula, data = centreAndScale(inData), na.action = na.pass))
   # Check whether an intercept term is present in the model matrix
   hasIntercept <- 0 %in% attr(curModelMatrix, "assign")
   stocNodeDefinitions <- list()
   if(hasIntercept) {
     # Remove the intercept term from the model matrix if it exists
-    curModelMatrix <- curModelMatrix[, attr(curModelMatrix, "assign") != 0]
+    curModelMatrix <- curModelMatrix[, attr(curModelMatrix, "assign") != 0, drop = FALSE]
     # Add the intercept term to the list of stochastic node definitions
     stocNodeDefinitions <- append(stocNodeDefinitions, setNames(list(
       structure("dnorm(0.0, 0.001)", loopIter = NA, loopMax = NA, vectorSpec = NA)
@@ -362,7 +373,8 @@ linearModelToCovariateNodeDefinition <- function(modelFormula, inputData, linkFu
     inputData = outData,
     inputConstants = outConst,
     stochasticNodeDef = stocNodeDefinitions,
-    deterministicNodeDef = detNodeDefinitions
+    deterministicNodeDef = detNodeDefinitions,
+    covSummaryStats = covMeanVals
   )
 }
 
@@ -554,7 +566,8 @@ linearModelToNodeDefinition <- function(modelFormula, inputData, errorFamily = g
     deterministicNodeDef = append(linearDefs$deterministicNodeDef, detRespNodeDefinitions),
     link = inLink,
     family = inFamily,
-    responseDataNodeNames = names(responseData)[!grepl("NumTrials$", names(responseData), perl = TRUE)]
+    responseDataNodeNames = names(responseData)[!grepl("NumTrials$", names(responseData), perl = TRUE)],
+    covSummaryStats = linearDefs$covSummaryStats
   )
 }
 
