@@ -477,7 +477,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     ))
     # Assign the error distribution for the ecosystem state precision model
     errorStrings <- paste("\t\t# Set the error specification model for the state value sub-model", switch(as.character(inStateValError),
-      "gaussian" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dnorm(linStateVal[dataIter], linStatePrec[dataIter]", sep = ""),
+      "gaussian" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dnorm(linStateVal[dataIter], linStatePrec[dataIter])", sep = ""),
       "gamma" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dgamma(mean = linStateVal[dataIter], sd = pow(linStatePrec[dataIter], -0.5))", sep = ""),
       "beta" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dbeta(mean = linStateVal[dataIter], sd = pow(linStatePrec[dataIter], -0.5))", sep = ""),
       "negbinomial" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dnegbin(\n\t\t\t1.0 - linStateVal[dataIter] * linStatePrec[dataIter], \n\t\t\tlinStateVal[dataIter] * linStateVal[dataIter] * linStatePrec[dataIter] / (1.0 - linStateVal[dataIter] * linStatePrec[dataIter]))", sep = ""),
