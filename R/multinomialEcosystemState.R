@@ -471,7 +471,7 @@ modelSpecificationMultinomialEcosystemState <- function(
         "\t\t# Set the model specification for the state precision model\n\t\tlog(linStatePrec[dataIter]) <- intercept_statePrec",
         paste(
           "\t\t# Set the model specification for the state precision model",
-          paste("\t\tlog(linStatePrec[dataIter]) <- ", paste(statePrecCovs, "_statePrec * ", statePrecCovs, "[dataIter]", sep = "", colllapse = " + "), sep = ""),
+          paste("\t\tlog(linStatePrec[dataIter]) <- ", paste(statePrecCovs, "_statePrec * ", statePrecCovs, "[dataIter]", sep = "", collapse = " + "), sep = ""),
           sep = "\n")
       )
     ))
