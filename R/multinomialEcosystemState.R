@@ -214,7 +214,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     outText
   })), ncol = 3, dimnames = list(NULL, c("stateVal", "stateProb", "statePrec")))
   # Retrieve the names of any response variables mentioned in any of the models
-  respVariables <- unique(gsub("\\s*~.*$", "", formulaStrings, perl = TRUE))
+  respVariables <- unique(as.vector(gsub("\\s*~.*$", "", formulaStrings, perl = TRUE)))
   respVariables <- respVariables[!is.na(respVariables) & respVariables != ""]
   if(length(respVariables) != 1) {
     stop("invalid entry for the response variable: only one variable name must be present on the left-hand side of the formulae")
@@ -232,7 +232,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     stop("error thrown during construction of the model matrix: ", err)
   })
   # Remove the intercept term in the model matrix
-  modelMatrix <- modelMatrix[, colnames(modelMatrix) != "(Intercept)"]
+  modelMatrix <- modelMatrix[, colnames(modelMatrix) != "(Intercept)", drop = FALSE]
   # Retrieve the model response variable
   respValues <- model.response(model.frame(fullFormula, inputData, na.action = NULL))
   numTrials <- NULL
@@ -471,13 +471,13 @@ modelSpecificationMultinomialEcosystemState <- function(
         "\t\t# Set the model specification for the state precision model\n\t\tlog(linStatePrec[dataIter]) <- intercept_statePrec",
         paste(
           "\t\t# Set the model specification for the state precision model",
-          paste("\t\tlog(linStatePrec[dataIter]) <- ", paste(statePrecCovs, "_statePrec * ", statePrecCovs, "[dataIter]", sep = "", colllapse = " + "), sep = ""),
+          paste("\t\tlog(linStatePrec[dataIter]) <- ", paste(statePrecCovs, "_statePrec * ", statePrecCovs, "[dataIter]", sep = "", collapse = " + "), sep = ""),
           sep = "\n")
       )
     ))
     # Assign the error distribution for the ecosystem state precision model
     errorStrings <- paste("\t\t# Set the error specification model for the state value sub-model", switch(as.character(inStateValError),
-      "gaussian" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dnorm(linStateVal[dataIter], linStatePrec[dataIter]", sep = ""),
+      "gaussian" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dnorm(linStateVal[dataIter], linStatePrec[dataIter])", sep = ""),
       "gamma" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dgamma(mean = linStateVal[dataIter], sd = pow(linStatePrec[dataIter], -0.5))", sep = ""),
       "beta" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dbeta(mean = linStateVal[dataIter], sd = pow(linStatePrec[dataIter], -0.5))", sep = ""),
       "negbinomial" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dnegbin(\n\t\t\t1.0 - linStateVal[dataIter] * linStatePrec[dataIter], \n\t\t\tlinStateVal[dataIter] * linStateVal[dataIter] * linStatePrec[dataIter] / (1.0 - linStateVal[dataIter] * linStatePrec[dataIter]))", sep = ""),
@@ -790,7 +790,9 @@ fitMultinomialEcosystemState <- function(
   modelSpecification <- modelSpecificationMultinomialEcosystemState(stateValModels, stateProbModels, statePrecModels, inputData, numStates, stateValError)
   modelObject <- nimbleModel(modelSpecification$modelCode, constants = modelSpecification$constants, data = modelSpecification$data, inits = modelSpecification$initialValues)
   # Build the MCMC object and compile it
-  mcmcObject <- buildMCMC(modelObject, enableWAIC = TRUE, monitors = c(modelObject$getVarNames(), "linStateVal", "linStatePrec", "linStateProb"))
+  varsToMonitor <- c(modelObject$getVarNames(), "linStateVal", "linStatePrec")
+  if (grepl("linStateProb", mod$modelText)) varsToMonitor <- c(varsToMonitor, "linStateProb")
+  mcmcObject <- buildMCMC(modelObject, enableWAIC = TRUE, monitors = varsToMonitor)
   mcmcObjectCompiled <- compileNimble(mcmcObject, modelObject)
   # Run the MCMC
   mcmcOutput <- runMCMC(mcmcObjectCompiled, niter = inIter, nburnin = inBurnIn, thin = inThin, nchains = inChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
