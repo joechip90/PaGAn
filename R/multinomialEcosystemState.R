@@ -232,7 +232,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     stop("error thrown during construction of the model matrix: ", err)
   })
   # Remove the intercept term in the model matrix
-  modelMatrix <- modelMatrix[, colnames(modelMatrix) != "(Intercept)"]
+  modelMatrix <- modelMatrix[, colnames(modelMatrix) != "(Intercept)", drop = FALSE]
   # Retrieve the model response variable
   respValues <- model.response(model.frame(fullFormula, inputData, na.action = NULL))
   numTrials <- NULL
