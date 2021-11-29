@@ -790,7 +790,9 @@ fitMultinomialEcosystemState <- function(
   modelSpecification <- modelSpecificationMultinomialEcosystemState(stateValModels, stateProbModels, statePrecModels, inputData, numStates, stateValError)
   modelObject <- nimbleModel(modelSpecification$modelCode, constants = modelSpecification$constants, data = modelSpecification$data, inits = modelSpecification$initialValues)
   # Build the MCMC object and compile it
-  mcmcObject <- buildMCMC(modelObject, enableWAIC = TRUE, monitors = c(modelObject$getVarNames(), "linStateVal", "linStatePrec", "linStateProb"))
+  varsToMonitor <- c(modelObject$getVarNames(), "linStateVal", "linStatePrec")
+  if (grepl("linStateProb", mod$modelText)) varsToMonitor <- c(varsToMonitor, "linStateProb")
+  mcmcObject <- buildMCMC(modelObject, enableWAIC = TRUE, monitors = varsToMonitor)
   mcmcObjectCompiled <- compileNimble(mcmcObject, modelObject)
   # Run the MCMC
   mcmcOutput <- runMCMC(mcmcObjectCompiled, niter = inIter, nburnin = inBurnIn, thin = inThin, nchains = inChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
