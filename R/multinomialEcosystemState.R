@@ -214,7 +214,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     outText
   })), ncol = 3, dimnames = list(NULL, c("stateVal", "stateProb", "statePrec")))
   # Retrieve the names of any response variables mentioned in any of the models
-  respVariables <- unique(gsub("\\s*~.*$", "", formulaStrings, perl = TRUE))
+  respVariables <- unique(as.vector(gsub("\\s*~.*$", "", formulaStrings, perl = TRUE)))
   respVariables <- respVariables[!is.na(respVariables) & respVariables != ""]
   if(length(respVariables) != 1) {
     stop("invalid entry for the response variable: only one variable name must be present on the left-hand side of the formulae")
