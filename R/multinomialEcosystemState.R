@@ -795,7 +795,7 @@ fitMultinomialEcosystemState <- function(
   mcmcObject <- buildMCMC(modelObject, enableWAIC = TRUE, monitors = varsToMonitor)
   mcmcObjectCompiled <- compileNimble(mcmcObject, modelObject)
   # Run the MCMC
-  mcmcOutput <- runMCMC(mcmcObjectCompiled, niter = inIter, nburnin = inBurnIn, thin = inThin, nchains = inChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
+  mcmcOutput <- runMCMC(mcmcObjectCompiled$mcmcObject, niter = mcmcIters, nburnin = mcmcBurnin, thin = mcmcThin, nchains = mcmcChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
   # Structure the compiled model, the MCMC samples, and the model specification into a list
   append(list(mcmcSamples = mcmcOutput, compiledModel = mcmcObjectCompiled), modelSpecification)
 }
