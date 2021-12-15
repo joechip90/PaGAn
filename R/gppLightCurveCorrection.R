@@ -96,6 +96,9 @@
 #'   of the MCMC samples.  This element is absent if \code{lightStandards} is \code{NULL}}
 #'   \item{indirectModelOutputs}{A \code{list} containing the outputs from \code{\link{glmNIMBLE}} for each of the
 #'   indirect component models specified in \code{indirectComponents}}
+#'   \item{rSquared}{A \code{list} object containing the following elements: \code{samples}, a \link[coda]{mcmc.list}
+#'   object containing the sampled r squared values and a set of summary statistics for these samples across all chains.
+#'   The r squared is calculated according to [Gelman et al. 2019](https://doi.org/10.1080/00031305.2018.1549100)}
 #' }
 #'
 #' @seealso \code{\link[DHARMa::createDHARMa]{createDHARMa}} \code{\link[nimble::nimbleCode]{nimbleCode}}
@@ -392,7 +395,8 @@ gppLightCurveCorrection <- function(
     predictionSummary = mcmcOutput$summary$all.chains[paste("gppMeanPred[", 1:nrow(inputData), "]", sep = ""), ],
     WAIC = mcmcOutput$WAIC,
     DHARMaResiduals = residAnalysisOb,
-    parameterFigure = coeffPlot
+    parameterFigure = coeffPlot,
+    rSquared = bayesRSquared(mcmcOutput$samples2, modelNodeDefinitions$inputData$gppValues)
   )
   # Rearrange the standardised gpp predictions
   if(length(inLightStandards) > 0) {

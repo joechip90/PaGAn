@@ -56,11 +56,14 @@
 #'   \item{predictionSummary}{A \code{data.frame} containing summary statistics for the mean
 #'   predictions}
 #'   \item{WAIC}{A scalar containing the Watanabe-Akaike information criterion for the model}
-#'   \item{DHARMaResiduals}{A \copde{list} of objects as created by \code{\link[DHARMa]{createDHARMa}} that contains
+#'   \item{DHARMaResiduals}{A \code{list} of objects as created by \code{\link[DHARMa]{createDHARMa}} that contains
 #'   an analysis of residuals of each of the model sub-components.  The first element is the DHARMa analysis for the
 #'   overall GPP residuals.  Each element afterwards is a DHARMa analysis for each of the indirect models.}
 #'   \item{parameterFigure}{A graphical object (\code{\link[ggplot2::ggplot]{ggplot}}) containing violin plots
 #'   for each of the parameters}
+#'   \item{rSquared}{A \code{list} object containing the following elements: \code{samples}, a \link[coda]{mcmc.list}
+#'   object containing the sampled r squared values and a set of summary statistics for these samples across all chains.
+#'   The r squared is calculated according to [Gelman et al. 2019](https://doi.org/10.1080/00031305.2018.1549100)}
 #' }
 #'
 #' @seealso \code{\link[DHARMa::createDHARMa]{createDHARMa}} \code{\link[nimble::nimbleCode]{nimbleCode}}
@@ -170,8 +173,44 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
     deterministicNodeDef = modelNodeDefinitions$deterministicNodeDef,
     modelFormula = as.formula(modelFormula),
     covSummaryStats = modelNodeDefinitions$covSummaryStats,
-    modelSuffix = processSuffix(modelSuffix)
+    modelSuffix = processSuffix(modelSuffix),
+    rSquared = bayesRSquared(mcmcOutput$samples2, modelNodeDefinitions$inputData[[modelNodeDefinitions$responseDataNodeNames]])
   )
+}
+
+bayesRSquared <- function(predictionChains, observedResponse) {
+  # Sample variance calculation function
+  vzFunc <- function(zIn) {
+    sum((zIn - mean(zIn))^2) / (length(zIn) - 1.0)
+  }
+  # Calculate the r squared values for each of the sampled predictors across the chains
+  sampledRSquared <- do.call(coda::mcmc.list, lapply(X = as.list(predictionChains), FUN = function(curChain, observedResponse) {
+    # Retrieve the samples from the current chain as a matrix
+    curMatrix <- as.matrix(curChain)
+    # Calculate the r squared for each sample of the MCMC chain
+    rSquaredVals <- apply(X = curMatrix, FUN = function(curPreds, observedResponse) {
+      # Remove any elements that have NA values in the observed response
+      valsToUse <- !is.na(observedResponse)
+      inCurPreds <- curPreds[valsToUse]
+      inObserved <- observedResponse[valsToUse]
+      # Calculate the variation in the vector of predicted values
+      varPred <- vzFunc(inCurPreds)
+      # Calculate the modelled residual variance
+      varRes <- vzFunc(inObserved - inCurPreds)
+      # Use these to calculate r squared
+      varPred / (varPred + varRes)
+    }, observedResponse = observedResponse, MARGIN = 1)
+    coda::mcmc(data = matrix(rSquaredVals, nrow = length(rSquaredVals), ncol = 1, dimnames = list(NULL, "rSquared")),
+      start = attr(curChain, "mcpar")[1], end = attr(curChain, "mcpar")[2], thin = attr(curChain, "mcpar")[3])
+  }, observedResponse = observedResponse))
+  sampledSummary <- summary(sampledRSquared)
+  # Calculate summary statistics of the r squared
+  summaryStats <- setNames(
+    c(sampledSummary$statistics, sampledSummary$quantiles),
+    gsub(" ", ".", tolower(c(names(sampledSummary$statistics), paste("quant", as.double(gsub("%", "", names(sampledSummary$quantiles), fixed = TRUE)) / 100.0, sep = ""))), fixed = TRUE)
+  )
+  # Arrange the summary statistics and the samples into a list
+  c(list(samples = sampledRSquared), as.list(summaryStats))
 }
 
 predict.glmNIMBLE <- function(modelOb, newData, type = "link") {

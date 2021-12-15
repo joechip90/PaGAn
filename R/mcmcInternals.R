@@ -10,6 +10,48 @@ errorFamilies <- function() {
   )
 }
 
+mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, predictionNodeNames, inits, mcmcList = list(), numCores = 1, WAIC = TRUE) {
+  # Sanity check the MCMC parameters
+  inMCMCList <- sanityCheckMCMCParameters(mcmcList)
+  # Sanity check the number of cores
+  inNumCores <- tryCatch(as.integer(numCores), error = function(err) {
+    stop("error encountered during processing of the number of cores to use: ", err)
+  })
+  if(length(inNumCores) <= 0) {
+    stop("error encountered during processing of the number of cores to use: input vector has length 0")
+  } else if(length(inNumCores) > 1) {
+    warning("length of vector specifying the number of cores to use is greater than one: only the first element will be used")
+    inNumCores <- inNumCores[1]
+  }
+  if(is.na(inNumCores) || inNumCores <= 0) {
+    # If the number of cores is NA or equal to less than zero then just set the number
+    # of cores equal to the number present in the system
+    inNumCores <- parallel::detectCores()
+  }
+  # Set the number of cores equal to the number of chains
+  inNumCores <- min(inNumCores, mcmcList$numChains + 1)
+  # Initialise a set of output objects
+  mcmcOut <- NULL
+  uncompiledModel <- NULL
+  compiledModel <- NULL
+  uncompiledMCMC <- NULL
+  compiledMCMC <- NULL
+  if(inNumCores <= 1) {
+    # Define the model object
+    uncompiledModel <- nimbleModel(modelCode, constants = modelNodeDefinitions$inputConstants, data = modelNodeDefinitions$inputData, inits = initValues, calculate = TRUE)
+    # Compile the model object
+    compiledModel <- compileNimble(uncompiledModel)
+    # Create an MCMC object
+    uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity)
+    # Compile the MCMC object
+    compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
+    # Run the MCMC
+    mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCParams$numRuns, nburnin = inMCMCParams$numBurnIn, nchains = inMCMCParams$numChains, thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = TRUE, summary = TRUE)
+  } else {
+
+  }
+}
+
 sanityCheckMCMCParameters <- function(inputList) {
   # Default MCMC sampling parameters
   mcmcList <- list(
