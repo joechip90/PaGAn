@@ -359,7 +359,7 @@ modelSpecificationMultinomialEcosystemState <- function(
       # Set the prior text for the state value model
       priorStateVal <- paste(
         paste("\t# Set priors for the state variable value model for state ", stateString, sep = ""),
-        paste("\t", stateValCovs_nonIntercept, "_stateVal[", curState, "] ~ ", inSetPriors$stateVal$pred, sep = "", collapse = "\n"),
+        if (length(stateValCovs_nonIntercept) > 0) paste("\t", stateValCovs_nonIntercept, "_stateVal[", curState, "] ~ ", inSetPriors$stateVal$pred, sep = "", collapse = "\n"),
         # The intercept of the first state has a normal prior.  All other states are forced to have positive priors in order to ensure that the
         # state labels are ordered and that MCMC doesn't just do state relabelling.
         paste("\tintercept_stateVal[", curState, "] ~ ", ifelse(curState == 1, inSetPriors$stateVal$int1, inSetPriors$stateVal$int2), sep = ""),
@@ -390,8 +390,8 @@ modelSpecificationMultinomialEcosystemState <- function(
       likelihoodStateVal <- paste(
         paste("\t\t# Set the model specification for the state value for state ", stateString, sep = ""),
         paste("\t\t", linkPrefix, "linStateVal[dataIter, ", curState, "]", linkSuffix, " <- ",
-          ifelse(curState > 1, paste("sum(intercept_stateVal[1:", curState, "])", sep = ""), "intercept_stateVal[1]"), " * intercept[dataIter] + ",
-          paste(stateValCovs_nonIntercept, "_stateVal[", curState, "] * ", stateValCovs_nonIntercept, "[dataIter]", sep = "", collapse = " + "), sep = ""),
+          ifelse(curState > 1, paste("sum(intercept_stateVal[1:", curState, "])", sep = ""), "intercept_stateVal[1]"), " * intercept[dataIter]", if (length(stateValCovs_nonIntercept > 0)) "+",
+          if (length(stateValCovs_nonIntercept > 0)) paste(stateValCovs_nonIntercept, "_stateVal[", curState, "] * ", stateValCovs_nonIntercept, "[dataIter]", sep = "", collapse = " + "), sep = ""),
         sep = "\n")
       # Set the model specification text for the state probability model
       likelihoodStateProb <- paste("\t\t# Set the model specification for the state probability model for state ", stateString, sep = "")
@@ -450,13 +450,11 @@ modelSpecificationMultinomialEcosystemState <- function(
       stateProbCovs <- getCovNames(formulaStrings[curState, 2], inputData, covariatesBUGS)
       statePrecCovs <- getCovNames(formulaStrings[curState, 3], inputData, covariatesBUGS)
       # Initialise a vecotr of output values
+      outValuesNames <- c("intercept", stateValCovs_nonIntercept)
       outValues <- setNames(c(
         rnorm(length(stateValCovs_nonIntercept), 0.0, 4.0),
         ifelse(curState > 1, abs(rnorm(1, 0.0, 4.0)), rnorm(1, 0.0, 4.0))
-      ), c(
-        paste(stateValCovs_nonIntercept, "_stateVal[", curState, "]", sep = ""),
-        paste("intercept_stateVal[", curState, "]", sep = "")
-      ))
+      ), paste(outValuesNames, "_stateVal[", curState, "]", sep = ""))
       if(curState > 1) {
         # Add the the probability sub-model parameters if the current state is greater than 1
         outValues <- c(outValues, setNames(
@@ -837,7 +835,7 @@ fitMultinomialEcosystemState <- function(
   mcmcObject <- buildMCMC(modelObject, enableWAIC = TRUE, monitors = varsToMonitor)
   mcmcObjectCompiled <- compileNimble(mcmcObject, modelObject)
   # Run the MCMC
-  mcmcOutput <- runMCMC(mcmcObjectCompiled, niter = inIter, nburnin = inBurnIn, thin = inThin, nchains = inChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
+  mcmcOutput <- runMCMC(mcmcObjectCompiled$mcmcObject, niter = mcmcIters, nburnin = mcmcBurnin, thin = mcmcThin, nchains = mcmcChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
   # Structure the compiled model, the MCMC samples, and the model specification into a list
   append(list(mcmcSamples = mcmcOutput, compiledModel = mcmcObjectCompiled), modelSpecification)
 }
