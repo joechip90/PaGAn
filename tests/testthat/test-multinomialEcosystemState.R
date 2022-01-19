@@ -41,8 +41,8 @@ test_that("that it is possible to fit the multinomial ecosystem state model to s
     "covClevelB_statePrec" = c(0.1, -0.1, 0.5),
     "covClevelC_statePrec" = c(0.4, -0.4, 0.5)
   )
-  testFrame$respVariable <- simOutput$respVariable[, 1]
   # Simulate a set of values
   simOutput <- simulateMultinomialEcosystemState(1, ecoValFormula, ecoProbFormula, ecoPrecFormula, testFrame, 3, gaussian, coefficientValues)
-  fittedModel <- fitMultinomialEcosystemState(ecoValFormula, ecoPrecFormula, ecoPrecFormula, testFrame, 3, gaussian, mcmcIters, mcmcBurnin, mcmcChains, mcmcThin)
+  testFrame$respVariable <- simOutput$respVariable[, 1]
+  fittedModel <- fitMultinomialEcosystemState(ecoValFormula, ecoProbFormula, ecoPrecFormula, testFrame, 3, gaussian, mcmcIters, mcmcBurnin, mcmcChains, mcmcThin)
 })
