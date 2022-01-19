@@ -528,7 +528,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     if(is.na(formulaStrings[1, 3])) {
       initialValues <- c(initialValues, setNames(rnorm(1, 0.0, 4.0), "intercept_statePrec"))
     } else {
-      initialValues <- c(initialValues, setNames(length(statePrecCovs), paste(statePrecCovs, "_statePrec", sep = "")))
+      initialValues <- c(initialValues, setNames(rnorm(length(statePrecCovs), 0.0, 4.0), paste(statePrecCovs, "_statePrec", sep = "")))
     }
   }
   # Create NIMBLE model code
