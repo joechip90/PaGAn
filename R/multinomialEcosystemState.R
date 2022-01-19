@@ -69,6 +69,8 @@ setBUGSVariableName <- function(inName) {
 #' in the model describing the ecosystem state value.  This can be from the \link[stats]{family}
 #' specification or \code{character} scalar with the following possible values: \code{"gaussian"},
 #' \code{"gamma"}, \code{"beta"}, \code{"negbinomial"}, or \code{"betabinomial"}.
+#' @param setPriors A named list of prior distributions (as characters). If sublists are not provided,
+#' values from higher levels are distributed allowing to specify several priors with one string.
 #'
 #' @return A list containing the following components:
 #' \itemize{
@@ -94,7 +96,18 @@ modelSpecificationMultinomialEcosystemState <- function(
   statePrecModels,
   inputData,
   numStates = NULL,
-  stateValError = gaussian
+  stateValError = gaussian,
+  setPriors = list(
+    stateVal = list(
+      int1 = "dnorm(0.0, 0.001)",
+      int2 = "dgamma(0.001, 0.001)",
+      pred = "dnorm(0.0, 0.001)"),
+    stateProb = list(
+      int2 = "dnorm(0.0, 0.001)",
+      pred = "dnorm(0.0, 0.001)"),
+    statePrec = list(
+      int = "dnorm(0.0, 0.001)",
+      pred = "dnorm(0.0, 0.001)"))
 ) {
   # Small helper function to test whether a variable is a formula
   is.formula <- function(inVal){
@@ -303,6 +316,30 @@ modelSpecificationMultinomialEcosystemState <- function(
     }
     outNames
   }
+  # Check priors and prepare full object specifying them
+  if (!all(grepl("^d.+\\([[:digit:]]+\\.?[[:digit:]]*\\,[[:space:]]*[[:digit:]]+\\.?[[:digit:]]*\\)$", unlist(setPriors))))
+    stop("unexpected prior specification")
+  # Helper function which takes call of the list and modify/amends its items on all levels
+  callModify <- function(oldCall, mods){
+    callObj <- eval(oldCall)
+    recMod <- function(target, mod){
+      for (i in names(mod)){
+        target[i] <- if (is.list(mod[[i]]))
+          list(recMod(target[[i]], mod[[i]])) else mod[[i]]
+      }
+      target
+    }
+    recStr <- function(structure, content){
+      for (i in names(structure)){
+        contentItem <- if (is.null(names(content))) content else content[[i]]
+        structure[i] <- if (is.list(structure[[i]]))
+          list(recStr(structure[[i]], contentItem)) else contentItem
+      }
+      structure
+    }
+    recStr(callObj, recMod(callObj, mods))
+  }
+  inSetPriors <- callModify(formals(modelSpecificationMultinomialEcosystemState)$setPriors, setPriors)
   # Initialise a vector to store potential initial values for the model
   initialValues <- as.character(c())
   # If the model has more than one state (99% of the times this function will be called) then create the relevant model strings
@@ -316,34 +353,37 @@ modelSpecificationMultinomialEcosystemState <- function(
       stateValCovs_nonIntercept <- stateValCovs[stateValCovs != "intercept"]
       stateProbCovs <- getCovNames(formulaStrings[curState, 2], inputData, covariatesBUGS)
       statePrecCovs <- getCovNames(formulaStrings[curState, 3], inputData, covariatesBUGS)
+      # Prepare auxiliary vectors of priors
+      auxPriorsPrec <- c(inSetPriors$statePrec$int, rep(inSetPriors$statePrec$pred, length(statePrecCovs) - 1))
+      auxPriorsProb <- c(inSetPriors$stateProb$int2, rep(inSetPriors$stateProb$pred, length(stateProbCovs) - 1))
       # Set the prior text for the state value model
       priorStateVal <- paste(
         paste("\t# Set priors for the state variable value model for state ", stateString, sep = ""),
-        if (length(stateValCovs_nonIntercept) > 0) paste("\t", stateValCovs_nonIntercept, "_stateVal[", curState, "] ~ dnorm(0.0, 0.001)", sep = "", collapse = "\n"),
+        if (length(stateValCovs_nonIntercept) > 0) paste("\t", stateValCovs_nonIntercept, "_stateVal[", curState, "] ~ ", inSetPriors$stateVal$pred, sep = "", collapse = "\n"),
         # The intercept of the first state has a normal prior.  All other states are forced to have positive priors in order to ensure that the
         # state labels are ordered and that MCMC doesn't just do state relabelling.
-        paste("\tintercept_stateVal[", curState, "] ~ ", ifelse(curState == 1, "dnorm(0.0, 0.001)", "dgamma(0.001, 0.001)"), sep = ""),
+        paste("\tintercept_stateVal[", curState, "] ~ ", ifelse(curState == 1, inSetPriors$stateVal$int1, inSetPriors$stateVal$int2), sep = ""),
         sep = "\n")
       # Set the prior text for the state probability model
       priorStateProb <- "\t# The first state probability model is a baseline model so has no parameters"
       if(curState > 1) {
         priorStateProb <- paste(
           paste("\t# Set priors for the state probability model for state ", stateString, sep = ""),
-          paste("\t", stateProbCovs, "_stateProb[", curState, "] ~ dnorm(0.0, 0.001)", sep = "", collapse = "\n"),
+          paste("\t", stateProbCovs, "_stateProb[", curState, "] ~", auxPriorsProb, sep = "", collapse = "\n"),
           sep = "\n")
       }
       # Set the prior text for the state precision model
       # Intially assume a simple multiplier model
       priorStatePrec <- paste(
         paste("\t# Set priors for the state precision model for state ", stateString, " (simple multiplier model)", sep = ""),
-        paste("\tlinStateProb_statePrec[", curState, "] ~ dnorm(0.0, 0.001)", sep = ""),
-        paste("\tintercept_statePrec[", curState, "] ~ dnorm(0.0, 0.001)", sep = ""),
+        paste("\tlinStateProb_statePrec[", curState, "] ~", inSetPriors$statePrec$pred, sep = ""),
+        paste("\tintercept_statePrec[", curState, "] ~", inSetPriors$statePrec$int, sep = ""),
         sep = "\n")
       if(!is.na(formulaStrings[curState, 3])) {
         # If a formula has been specified for the precision model then use a linear sub-model instead
         priorStatePrec <- paste(
           paste("\t# Set priors for the state precision model for state ", stateString, sep = ""),
-          paste("\t", statePrecCovs, "_statePrec[", curState, "] ~ dnorm(0.0, 0.001)", sep = "", collapse = "\n"),
+          paste("\t", statePrecCovs, "_statePrec[", curState, "] ~", auxPriorsPrec, sep = "", collapse = "\n"),
           sep = "\n")
       }
       # Set the model specification text for the state value model
@@ -441,20 +481,22 @@ modelSpecificationMultinomialEcosystemState <- function(
     stateValCovs <- getCovNames(formulaStrings[1, 1], inputData, covariatesBUGS)
     statePrecCovs <- getCovNames(formulaStrings[1, 3], inputData, covariatesBUGS)
     # Create a matrix of model text
+    auxPriorsVal <- c(inSetPriors$stateVal$int1, rep(inSetPriors$stateVal$pred, length(stateValCovs) - 1))
+    auxPriorsPrec <- c(inSetPriors$statePrec$int, rep(inSetPriors$statePrec$pred, length(statePrecCovs) - 1))
     modelStrings <- matrix(nrow = 1, dimnames = list(NULL, c("priorValModel", "priorProbModel", "priorPrecModel", "likelihoodValModel", "likelihoodProbModel", "likelihoodPrecModel")), data = c(
       # Set the prior for the state value model
       paste(
         "\t# Set priors for the state variable value model",
-        paste("\t", stateValCovs, "_stateVal ~ dnorm(0.0, 0.001)", sep = "", collapse = "\n"),
+        paste("\t", stateValCovs, "_stateVal ~", auxPriorsVal, sep = "", collapse = "\n"),
       sep = "\n"),
       # Set the prior for the state probability model: there is no state probability model because there is only one state
       "\t# There is no state probability model because there is only one state",
       # Set the prior for the state precision model
       ifelse(is.na(formulaStrings[1, 3]),
-        "\t# Set priors for the state precision model\n\tintercept_statePrec ~ dnorm(0.0, 0.001)",
+        paste("\t# Set priors for the state precision model\n\tintercept_statePrec ~", inSetPriors$statePrec$int),
         paste(
           "\t# Set priors for the state precision model",
-          paste("\t", statePrecCovs, "_statePrec ~ dnorm(0.0, 0.001)", sep = "", collapse = "\n"),
+          paste("\t", statePrecCovs, "_statePrec ~", auxPriorsPrec, sep = "", collapse = "\n"),
         sep = "\n")
       ),
       # Set the model specification text for the state value model
