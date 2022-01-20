@@ -824,10 +824,21 @@ fitMultinomialEcosystemState <- function(
   mcmcIters = 10000,
   mcmcBurnin = 5000,
   mcmcChains = 4,
-  mcmcThin = 1
+  mcmcThin = 1,
+  setPriors = list(
+    stateVal = list(
+      int1 = "dnorm(0.0, 0.001)",
+      int2 = "dgamma(0.001, 0.001)",
+      pred = "dnorm(0.0, 0.001)"),
+    stateProb = list(
+      int2 = "dnorm(0.0, 0.001)",
+      pred = "dnorm(0.0, 0.001)"),
+    statePrec = list(
+      int = "dnorm(0.0, 0.001)",
+      pred = "dnorm(0.0, 0.001)"))
 ) {
   # Create a NIMBLE model specification
-  modelSpecification <- modelSpecificationMultinomialEcosystemState(stateValModels, stateProbModels, statePrecModels, inputData, numStates, stateValError)
+  modelSpecification <- modelSpecificationMultinomialEcosystemState(stateValModels, stateProbModels, statePrecModels, inputData, numStates, stateValError, setPriors)
   modelObject <- nimbleModel(modelSpecification$modelCode, constants = modelSpecification$constants, data = modelSpecification$data, inits = modelSpecification$initialValues)
   # Build the MCMC object and compile it
   varsToMonitor <- c(modelObject$getVarNames(), "linStateVal", "linStatePrec")
