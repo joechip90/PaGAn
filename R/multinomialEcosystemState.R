@@ -317,7 +317,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     outNames
   }
   # Check priors and prepare full object specifying them
-  if (!all(grepl("^d.+\\([[:digit:]]+\\.?[[:digit:]]*\\,[[:space:]]*[[:digit:]]+\\.?[[:digit:]]*\\)$", unlist(setPriors))))
+  if (!all(grepl("^d.+\\(-*[[:digit:]]+\\.?-*[[:digit:]]*\\,[[:space:]]*-*[[:digit:]]+\\.?-*[[:digit:]]*\\)$", unlist(setPriors))))
     stop("unexpected prior specification")
   # Helper function which takes call of the list and modify/amends its items on all levels
   callModify <- function(oldCall, mods){
