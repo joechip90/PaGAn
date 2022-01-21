@@ -69,8 +69,14 @@ setBUGSVariableName <- function(inName) {
 #' in the model describing the ecosystem state value.  This can be from the \link[stats]{family}
 #' specification or \code{character} scalar with the following possible values: \code{"gaussian"},
 #' \code{"gamma"}, \code{"beta"}, \code{"negbinomial"}, or \code{"betabinomial"}.
-#' @param setPriors A named list of prior distributions (as characters). If sublists are not provided,
-#' values from higher levels are distributed allowing to specify several priors with one string.
+#' @param setPriors A named list of prior distributions. Distribution are specified using character
+#' strings. If sublists are not provided, values from the list are distributed to all sublist items
+#' allowing to specify several priors at once. Sublist items are \code{"int"}, for specification of
+#' priors on intercept parameters, and \code{"pred"}, from specification of priors on predictor
+#' parameters. \code{"int"} is followed by \code{"1"} or \code{"2"} marking priors for the first
+#' intercept and all the other intercepts respectively. For full structure of the list see default
+#' values. Prior \code{"stateVal$Int2"} should allow only positive values to ensure distinctness of
+#' states.
 #'
 #' @return A list containing the following components:
 #' \itemize{
@@ -316,12 +322,13 @@ modelSpecificationMultinomialEcosystemState <- function(
     }
     outNames
   }
-  # Check priors and prepare full object specifying them
+  # Check priors
   if (!all(grepl("^d.+\\(-*[[:digit:]]+\\.?-*[[:digit:]]*\\,[[:space:]]*-*[[:digit:]]+\\.?-*[[:digit:]]*\\)$", unlist(setPriors))))
     stop("unexpected prior specification")
   # Helper function which takes call of the list and modify/amends its items on all levels
   callModify <- function(oldCall, mods){
     callObj <- eval(oldCall)
+    # Recursive function which modifies items of a list (and add new ones)
     recMod <- function(target, mod){
       for (i in names(mod)){
         target[i] <- if (is.list(mod[[i]]))
@@ -329,6 +336,7 @@ modelSpecificationMultinomialEcosystemState <- function(
       }
       target
     }
+    # Recursive function which copies structure of the list propagating items to lower levels
     recStr <- function(structure, content){
       for (i in names(structure)){
         contentItem <- if (is.null(names(content))) content else content[[i]]
@@ -339,6 +347,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     }
     recStr(callObj, recMod(callObj, mods))
   }
+  # Prepare full object specifying them priors
   inSetPriors <- callModify(formals(modelSpecificationMultinomialEcosystemState)$setPriors, setPriors)
   # Initialise a vector to store potential initial values for the model
   initialValues <- as.character(c())
@@ -791,6 +800,14 @@ simulateMultinomialEcosystemState <- function(
 #' @param mcmcChains An integer scalar giving the number of MCMC chains to use.
 #' @param mcmcThin An integer scalar giving the thinning frequency in the MCMC chains.  For example,
 #' a value of \code{4} results in every fourth values being retained.
+#' @param setPriors A named list of prior distributions. Distribution are specified using character
+#' strings. If sublists are not provided, values from the list are distributed to all sublist items
+#' allowing to specify several priors at once. Sublist items are \code{"int"}, for specification of
+#' priors on intercept parameters, and \code{"pred"}, from specification of priors on predictor
+#' parameters. \code{"int"} is followed by \code{"1"} or \code{"2"} marking priors for the first
+#' intercept and all the other intercepts respectively. For full structure of the list see default
+#' values. Prior \code{"stateVal$Int2"} should allow only positive values to ensure distinctness of
+#' states.
 #'
 #' @return A list containing the following components:
 #' \itemize{
