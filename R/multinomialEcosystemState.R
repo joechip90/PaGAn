@@ -808,6 +808,7 @@ simulateMultinomialEcosystemState <- function(
 #' intercept and all the other intercepts respectively. For full structure of the list see default
 #' values. Prior \code{"stateVal$Int2"} should allow only positive values to ensure distinctness of
 #' states.
+#' @param setInit list of initial values which overwrites generated ones.
 #'
 #' @return A list containing the following components:
 #' \itemize{
@@ -852,10 +853,13 @@ fitMultinomialEcosystemState <- function(
       pred = "dnorm(0.0, 0.001)"),
     statePrec = list(
       int = "dnorm(0.0, 0.001)",
-      pred = "dnorm(0.0, 0.001)"))
+      pred = "dnorm(0.0, 0.001)")),
+  setInit = NULL
 ) {
   # Create a NIMBLE model specification
   modelSpecification <- modelSpecificationMultinomialEcosystemState(stateValModels, stateProbModels, statePrecModels, inputData, numStates, stateValError, setPriors)
+  # Change initial values if provided
+  if (!is.null(setInit)) modelSpecification$initialValues <- setInit
   modelObject <- nimbleModel(modelSpecification$modelCode, constants = modelSpecification$constants, data = modelSpecification$data, inits = modelSpecification$initialValues)
   # Build the MCMC object and compile it
   varsToMonitor <- c(modelObject$getVarNames(), "linStateVal", "linStatePrec")
@@ -866,4 +870,95 @@ fitMultinomialEcosystemState <- function(
   mcmcOutput <- runMCMC(mcmcObjectCompiled$mcmcObject, niter = mcmcIters, nburnin = mcmcBurnin, thin = mcmcThin, nchains = mcmcChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
   # Structure the compiled model, the MCMC samples, and the model specification into a list
   append(list(mcmcSamples = mcmcOutput, compiledModel = mcmcObjectCompiled), modelSpecification)
+}
+
+## 3. ------ DEFINE GENERAL MODEL METHODS ------
+
+### 3.1. ==== Plot results of Multinomial Ecosystem State Model ====
+#' @title Plot results of Multinomial Ecosystem State Model
+#'
+#' @description This function plots results of multinomial ecosystem state model on the
+#' current graphical device.
+#'
+#' @param form formula, such as y ~ pred, specifying variables to be plotted
+#' @param mod an object of class "mesm"
+#'
+#' @return Returns invisibly a list containing posterior means of state value
+#' coefficients for each chain used in plotting.
+#'
+#' @author Adam Klimes
+#' @export
+#'
+plot.mesm <- function(form, mod, yaxis) {
+  resp <- mod$data[[1]]
+  dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
+                                              length(resp)])
+  svar <- labels(terms(form))
+  svar <- svar[svar %in% names(dat)]
+  auxRange <- max(resp) - min(resp)
+  invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
+                    logit = function(x) exp(x)/(1+exp(x)))
+  par(mai = c(0.8,0.8,0.1,0.1))
+  plot(form, data = dat, ylim = c(min(resp) - 0.05 * auxRange, max(resp) + 0.3 * auxRange),
+       yaxs = "i", axes = FALSE)
+  box(bty = "l")
+  axis(1)
+  axis(2, labels = yaxis, at = yaxis)
+  axis(2, labels = 0:1, at = c(max(resp) + 0.1 * auxRange, max(resp) + 0.25 * auxRange))
+  abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
+  abline(h = max(resp) + 0.1 * auxRange, lty = 2)
+  abline(h = max(resp) + 0.25 * auxRange, lty = 2)
+  auxLines <- function(chain, dat, mod){
+    nstates <- length(fitmod$initialValues$intercept_stateVal)
+    xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
+    ind <- NULL
+    if (nstates > 1) ind <- paste0("[", 1:nstates, "]")
+    cNames <- colnames(mod$mcmcSamples$samples[[chain]])
+    valInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateVal", ind), drop = FALSE])
+    valInt[-1] <- valInt[-1] + valInt[1]
+    precInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_statePrec", ind), drop = FALSE])
+    probInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateProb", ind), drop = FALSE], na.rm = TRUE)
+    valCov <- if (paste0(svar, "_stateVal", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateVal", ind), drop = FALSE]) else rep(0, nstates)
+    precCov <- if (paste0(svar, "_statePrec", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_statePrec", ind), drop = FALSE]) else rep(0, nstates)
+    probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateProb", ind), drop = FALSE], na.rm = TRUE) else rep(0, nstates)
+    probVals <- data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov))
+    probVals <- probVals / rowSums(probVals)
+    for (i in 1:nstates){
+      sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx)), col = i, lty = chain, lwd = 3)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx)) + sdVals, col = i, lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx)) - sdVals, col = i, lty = 2, lwd = 1)
+      lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = i, lwd = 3)
+    }
+    out <- cbind(valInt, valCov)
+    colnames(out) <- c("Intercept", svar)
+    rownames(out) <- paste0("stateVal_state", 1:nstates)
+    out
+  }
+  out <- lapply(seq_along(mod$mcmcSamples$samples), auxLines, dat, mod)
+  out <- setNames(out, paste("chain", seq_along(mod$mcmcSamples$samples), sep = "_"))
+  invisible(out)
+}
+
+### 3.2. ==== Summary of Multinomial Ecosystem State Model ====
+#' @title Summarize Multinomial Ecosystem State Model
+#'
+#' @description This function ćalculates posterior quantiles of parameters of
+#' Multinomial Ecosystem State Model across all chains
+#'
+#' @param object an object of class "mesm"
+#' @param digit integer specifying the number of decimal places to be used
+#'
+#' @return Returns data.frame of quantiles of posterior of parameters
+#'
+#' @author Adam Klimes
+#' @export
+#'
+summary.mesm <- function(object, digit = 4){
+  varsSamples <- lapply(object$mcmcSamples$samples,
+    function(x) x[, !grepl(paste0("^lifted|^linState|^", names(object$data)), colnames(x))])
+  allSamples <- do.call(rbind, varsSamples)
+  auxSummary <- function(x)
+    c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
+  round(t(apply(allSamples, 2, auxSummary)), digit)
 }
