@@ -461,25 +461,25 @@ modelSpecificationMultinomialEcosystemState <- function(
       # Initialise a vecotr of output values
       outValuesNames <- c("intercept", stateValCovs_nonIntercept)
       outValues <- setNames(c(
-        rnorm(length(stateValCovs_nonIntercept), 0.0, 0.1),
-        ifelse(curState > 1, abs(rnorm(1, 0.0, 0.1)), rnorm(1, 0.0, 0.1))
+        rnorm(length(stateValCovs_nonIntercept), 0.0, 4.0),
+        ifelse(curState > 1, abs(rnorm(1, 0.0, 4.0)), rnorm(1, 0.0, 4.0))
       ), paste(outValuesNames, "_stateVal[", curState, "]", sep = ""))
       if(curState > 1) {
         # Add the the probability sub-model parameters if the current state is greater than 1
         outValues <- c(outValues, setNames(
-          rnorm(length(stateProbCovs), 0.0, 0.1),
+          rnorm(length(stateProbCovs), 0.0, 4.0),
           paste(stateProbCovs, "_stateProb[", curState, "]", sep = "")
         ))
       }
       # Add the precision sub-model parameters
       if(is.na(formulaStrings[curState, 3])) {
         outValues <- c(outValues, setNames(
-          rnorm(2, c(2.0, 0.0), 0.1),
+          rnorm(2, 0.0, 4.0),
           paste(c("intercept_statePrec", "linStateProb_statePrec"), "[", curState, "]", sep = "")
         ))
       } else {
         outValues <- c(outValues, setNames(
-          rnorm(length(statePrecCovs), 2.0, 0.1),
+          rnorm(length(statePrecCovs), 0.0, 4.0),
           paste(statePrecCovs, "_statePrec[", curState, "]", sep = "")
         ))
       }
@@ -533,11 +533,11 @@ modelSpecificationMultinomialEcosystemState <- function(
       "betabinomial" = paste("\t\t", respVariablesBUGS, "[dataIter] ~ dbetabin(mean = linStateVal[dataIter], prec = linStatePrec[dataIter], size = numTrials[dataIter])")
     ), sep = "\n")
     # Create a vector of potential initial values for the model parameters
-    initialValues <- setNames(rnorm(length(stateValCovs), 0.0, 0.1), paste(stateValCovs, "_stateVal", sep = ""))
+    initialValues <- setNames(rnorm(length(stateValCovs), 0.0, 4.0), paste(stateValCovs, "_stateVal", sep = ""))
     if(is.na(formulaStrings[1, 3])) {
-      initialValues <- c(initialValues, setNames(rnorm(1, 2.0, 0.1), "intercept_statePrec"))
+      initialValues <- c(initialValues, setNames(rnorm(1, 0.0, 4.0), "intercept_statePrec"))
     } else {
-      initialValues <- c(initialValues, setNames(rnorm(length(statePrecCovs), 2.0, 0.1), paste(statePrecCovs, "_statePrec", sep = "")))
+      initialValues <- c(initialValues, setNames(rnorm(length(statePrecCovs), 0.0, 4.0), paste(statePrecCovs, "_statePrec", sep = "")))
     }
   }
   # Create NIMBLE model code
