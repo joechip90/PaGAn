@@ -808,6 +808,7 @@ simulateMultinomialEcosystemState <- function(
 #' intercept and all the other intercepts respectively. For full structure of the list see default
 #' values. Prior \code{"stateVal$Int2"} should allow only positive values to ensure distinctness of
 #' states.
+#' @param setInit list of initial values which overwrites generated ones.
 #'
 #' @return A list containing the following components:
 #' \itemize{
@@ -852,10 +853,13 @@ fitMultinomialEcosystemState <- function(
       pred = "dnorm(0.0, 0.001)"),
     statePrec = list(
       int = "dnorm(0.0, 0.001)",
-      pred = "dnorm(0.0, 0.001)"))
+      pred = "dnorm(0.0, 0.001)")),
+  setInit = NULL
 ) {
   # Create a NIMBLE model specification
   modelSpecification <- modelSpecificationMultinomialEcosystemState(stateValModels, stateProbModels, statePrecModels, inputData, numStates, stateValError, setPriors)
+  # Change initial values if provided
+  if (!is.null(setInit)) modelSpecification$initialValues <- setInit
   modelObject <- nimbleModel(modelSpecification$modelCode, constants = modelSpecification$constants, data = modelSpecification$data, inits = modelSpecification$initialValues)
   # Build the MCMC object and compile it
   varsToMonitor <- c(modelObject$getVarNames(), "linStateVal", "linStatePrec")
