@@ -926,9 +926,9 @@ plot.mesm <- function(form, mod, yaxis) {
     for (i in 1:nstates){
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx)), col = i, lty = chain, lwd = 3)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx)) + sdVals, col = i, lty = 2, lwd = 1)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx)) - sdVals, col = i, lty = 2, lwd = 1)
-      lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = i, lwd = 3)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals)), col = i, lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals)), col = i, lty = 2, lwd = 1)
+      lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = i, lty = chain, lwd = 3)
     }
     out <- cbind(valInt, valCov)
     colnames(out) <- c("Intercept", svar)
