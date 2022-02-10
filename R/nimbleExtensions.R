@@ -647,7 +647,7 @@ dgammaStateValueMembership <- nimbleFunction(
     # Intialise a vector of conditional probabilities for each state
     condStateProb <- numeric(length = numStates)
     for(stateIter in 1:numStates) {
-      condStateProb[stateIter] <- inStateProb[stateIter] * dgamma(x, inShape[stateIter], inScale[stateIter], FALSE)
+      condStateProb[stateIter] <- inStateProb[stateIter] * dgamma(x, inShape[stateIter], inScale[stateIter], log = FALSE)
     }
     # Intialise the output probability
     outProb <- sum(condStateProb[1:numStates]) / fullProb
