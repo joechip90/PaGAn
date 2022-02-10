@@ -323,7 +323,7 @@ modelSpecificationMultinomialEcosystemState <- function(
     outNames
   }
   # Check priors
-  if (!all(grepl("^d.+\\(-*[[:digit:]]+\\.?-*[[:digit:]]*\\,[[:space:]]*-*[[:digit:]]+\\.?-*[[:digit:]]*\\)$", unlist(setPriors))))
+  if (!all(grepl("^d.+\\(.*)$", unlist(setPriors))))
     stop("unexpected prior specification")
   # Helper function which takes call of the list and modify/amends its items on all levels
   callModify <- function(oldCall, mods){
@@ -912,23 +912,27 @@ plot.mesm <- function(form, mod, yaxis) {
     nstates <- length(fitmod$initialValues$intercept_stateVal)
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
     ind <- NULL
-    if (nstates > 1) ind <- paste0("[", 1:nstates, "]")
+    if (nstates > 1) {
+      ind <- paste0("[", 1:nstates, "]")
+      probInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateProb", ind), drop = FALSE], na.rm = TRUE)
+    }
     cNames <- colnames(mod$mcmcSamples$samples[[chain]])
     valInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateVal", ind), drop = FALSE])
     valInt[-1] <- valInt[-1] + valInt[1]
     precInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_statePrec", ind), drop = FALSE])
-    probInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateProb", ind), drop = FALSE], na.rm = TRUE)
     valCov <- if (paste0(svar, "_stateVal", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateVal", ind), drop = FALSE]) else rep(0, nstates)
     precCov <- if (paste0(svar, "_statePrec", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_statePrec", ind), drop = FALSE]) else rep(0, nstates)
     probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateProb", ind), drop = FALSE], na.rm = TRUE) else rep(0, nstates)
-    probVals <- data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov))
-    probVals <- probVals / rowSums(probVals)
+    if (nstates > 1) {
+      probVals <- data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov))
+      probVals <- probVals / rowSums(probVals)
+    }
     for (i in 1:nstates){
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx)), col = i, lty = chain, lwd = 3)
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals)), col = i, lty = 2, lwd = 1)
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals)), col = i, lty = 2, lwd = 1)
-      lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = i, lty = chain, lwd = 3)
+      if (nstates > 1) lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = i, lty = chain, lwd = 3)
     }
     out <- cbind(valInt, valCov)
     colnames(out) <- c("Intercept", svar)
