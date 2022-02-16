@@ -889,7 +889,7 @@ fitMultinomialEcosystemState <- function(
 #' @author Adam Klimes
 #' @export
 #'
-plot.mesm <- function(form, mod, yaxis, transCol = TRUE) {
+plot.mesm <- function(form, mod, yaxis, transCol = TRUE, ...) {
   resp <- mod$data[[1]]
   dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
                                               length(resp)])
@@ -900,7 +900,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE) {
                     logit = function(x) exp(x)/(1+exp(x)))
   par(mai = c(0.8,0.8,0.1,0.1))
   plot(form, data = dat, ylim = c(min(resp) - 0.05 * auxRange, max(resp) + 0.3 * auxRange),
-       yaxs = "i", axes = FALSE)
+       yaxs = "i", axes = FALSE, ...)
   box(bty = "l")
   axis(1)
   axis(2, labels = yaxis, at = yaxis)
@@ -933,8 +933,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE) {
         lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = i, lty = chain, lwd = 3)
         if (transCol) {
           rgbVec <- col2rgb(cols)[, 1]
-          print(rgbVec)
-          cols <- rgb(rgbVec[1], rgbVec[2], rgbVec[3], alpha = probVals[, i] * 255, maxColorValue = 255)
+          cols <- rgb(rgbVec[1], rgbVec[2], rgbVec[3], alpha = 40 + probVals[, i] * 215, maxColorValue = 255)
         }
       }
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
