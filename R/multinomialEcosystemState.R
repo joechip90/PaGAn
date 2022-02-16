@@ -889,7 +889,8 @@ fitMultinomialEcosystemState <- function(
 #' @author Adam Klimes
 #' @export
 #'
-plot.mesm <- function(form, mod, yaxis, transCol = TRUE, ...) {
+plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
+                      colSet = c("#1b9e77", "#d95f02", "#7570b3"), ...) {
   resp <- mod$data[[1]]
   dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
                                               length(resp)])
@@ -908,6 +909,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, ...) {
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
+  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.15, max(resp) + 0.175 * auxRange, paste("WAIC:", round(fitmod$mcmcSamples$WAIC$WAIC, 1)))
   auxLines <- function(chain, dat, mod){
     nstates <- length(fitmod$initialValues$intercept_stateVal)
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
@@ -928,9 +930,9 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, ...) {
       probVals <- probVals / rowSums(probVals)
     }
     for (i in 1:nstates){
-      cols <- i
+      cols <- colSet[i]
       if (nstates > 1) {
-        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = i, lty = chain, lwd = 3)
+        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = colSet[i], lty = chain, lwd = 3)
         if (transCol) {
           rgbVec <- col2rgb(cols)[, 1]
           cols <- rgb(rgbVec[1], rgbVec[2], rgbVec[3], alpha = 40 + probVals[, i] * 215, maxColorValue = 255)
@@ -939,8 +941,8 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, ...) {
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
       yEst <- do.call(invlink, list(valInt[i] + valCov[i] * xx))
       segments(head(xx, -1), head(yEst, -1), x1 = tail(xx, -1), y1 = tail(yEst, -1), col = cols, lty = chain, lwd = 3)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals)), col = i, lty = 2, lwd = 1)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals)), col = i, lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals)), col = colSet[i], lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals)), col = colSet[i], lty = 2, lwd = 1)
     }
     out <- cbind(valInt, valCov)
     colnames(out) <- c("Intercept", svar)
