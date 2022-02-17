@@ -890,7 +890,8 @@ fitMultinomialEcosystemState <- function(
 #' @export
 #'
 plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
-                      colSet = c("#1b9e77", "#d95f02", "#7570b3"), ...) {
+                      colSet = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
+                      drawXaxis = TRUE, ...) {
   resp <- mod$data[[1]]
   dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
                                               length(resp)])
@@ -903,15 +904,15 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
   plot(form, data = dat, ylim = c(min(resp) - 0.05 * auxRange, max(resp) + 0.3 * auxRange),
        yaxs = "i", axes = FALSE, ...)
   box(bty = "l")
-  axis(1)
+  if (drawXaxis) axis(1)
   axis(2, labels = yaxis, at = yaxis)
   axis(2, labels = 0:1, at = c(max(resp) + 0.1 * auxRange, max(resp) + 0.25 * auxRange))
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
-  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.15, max(resp) + 0.175 * auxRange, paste("WAIC:", round(fitmod$mcmcSamples$WAIC$WAIC, 1)))
+  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.15, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
   auxLines <- function(chain, dat, mod){
-    nstates <- length(fitmod$initialValues$intercept_stateVal)
+    nstates <- length(mod$initialValues$intercept_stateVal)
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
     ind <- NULL
     if (nstates > 1) {
@@ -919,16 +920,16 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       probInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateProb", ind), drop = FALSE], na.rm = TRUE)
     }
     cNames <- colnames(mod$mcmcSamples$samples[[chain]])
-    valInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateVal", ind), drop = FALSE])
-    valInt[-1] <- valInt[-1] + valInt[1]
+    valInt <- cumsum(colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateVal", ind), drop = FALSE]))
     precInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_statePrec", ind), drop = FALSE])
     valCov <- if (paste0(svar, "_stateVal", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateVal", ind), drop = FALSE]) else rep(0, nstates)
     precCov <- if (paste0(svar, "_statePrec", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_statePrec", ind), drop = FALSE]) else rep(0, nstates)
     probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateProb", ind), drop = FALSE], na.rm = TRUE) else rep(0, nstates)
     if (nstates > 1) {
-      probVals <- data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov))
+      probVals <- as.matrix(data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov)))
       probVals <- probVals / rowSums(probVals)
-    }
+      probVals[is.nan(probVals)] <- 1
+      }
     for (i in 1:nstates){
       cols <- colSet[i]
       if (nstates > 1) {
