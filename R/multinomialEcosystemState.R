@@ -890,7 +890,7 @@ fitMultinomialEcosystemState <- function(
 #' @export
 #'
 plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
-                      colSet = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
+                      setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       drawXaxis = TRUE, ...) {
   resp <- mod$data[[1]]
   dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
@@ -931,9 +931,9 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       probVals[is.nan(probVals)] <- 1
       }
     for (i in 1:nstates){
-      cols <- colSet[i]
+      cols <- setCol[i]
       if (nstates > 1) {
-        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = colSet[i], lty = chain, lwd = 3)
+        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = setCol[i], lty = chain, lwd = 3)
         if (transCol) {
           rgbVec <- col2rgb(cols)[, 1]
           cols <- rgb(rgbVec[1], rgbVec[2], rgbVec[3], alpha = 40 + probVals[, i] * 215, maxColorValue = 255)
@@ -942,8 +942,8 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
       yEst <- do.call(invlink, list(valInt[i] + valCov[i] * xx))
       segments(head(xx, -1), head(yEst, -1), x1 = tail(xx, -1), y1 = tail(yEst, -1), col = cols, lty = chain, lwd = 3)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals)), col = colSet[i], lty = 2, lwd = 1)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals)), col = colSet[i], lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals)), col = setCol[i], lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals)), col = setCol[i], lty = 2, lwd = 1)
     }
     out <- cbind(valInt, valCov)
     colnames(out) <- c("Intercept", svar)
