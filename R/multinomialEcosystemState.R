@@ -1004,14 +1004,14 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @author Adam Klimes
 #' @export
 #'
-slice.mesm <- function(form, mod, value = 0, byChains = TRUE){
+slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = ""){
   resp <- mod$data[[1]]
-  parsTab <- summary.mesm(mod, byChains = byChains)
+  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
-  plotSlice <- function(pars, value){
+  plotSlice <- function(pars, value, mod){
     getPars <- function(curState, pars, value){
       auxExtract <- function(toGet, curState, pars, value){
         sum(pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"], pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"] * value)
@@ -1019,13 +1019,28 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE){
       est <- auxExtract("stateVal", curState, pars, value)
       prec <- auxExtract("statePrec", curState, pars, value)
       prob <- auxExtract("stateProb", curState, pars, value)
-      c(est = est, prec = prec, prob = prob)
+      c(est = do.call(invlink, list(est)), sd = 1 / sqrt(exp(prec)), prob = prob)
     }
     parsVal <- data.frame(lapply(1:Nstates, getPars, pars, value))
     colnames(parsVal) <- paste0("State", 1:Nstates)
     parsVal["prob", 1] <- 0
     parsVal["prob", ] <- exp(parsVal["prob", ]) / sum(exp(parsVal["prob", ]))
+    aux <- parsVal["est", ]
+    parsD <- switch(as.character(mod$errorModel),
+                    gaussian = parsVal[c("est", "sd"), ],
+                    gamma = rbind(aux^2/parsVal["sd", ]^2, aux/parsVal["sd", ]^2),
+                    beta = rbind(aux*(aux*(1-aux)/parsVal["sd", ]^2-1), (aux*(1-aux)/parsVal["sd", ]^2-1)*(1-aux)))
+    dfun <- switch(as.character(mod$errorModel),
+                   gaussian = dnorm,
+                   gamma = dgamma,
+                   beta = dbeta)
+    xx <- seq(min(resp), max(resp), length.out = 1000)
+    dens <- apply(parsD, 2, function(pars) do.call(dfun, list(xx, pars[1], pars[2])))
+    dens <- dens * rep(unlist(parsVal["prob", ]), each = nrow(dens))
+    dens <- rowSums(dens)
+    lines(xx, dens / max(dens))
+    abline(v = parsVal["est", ], lty = 2)
   }
-  plot(range(resp), c(0, 1), type = "n", ylab = "Probability density")
-  lapply(parsTab, plotSlice, value)
+  plot(range(resp), c(0, 1), type = "n", ylab = "Probability density (st.)", xlab = xlab)
+  lapply(parsTab, plotSlice, value, mod)
 }
