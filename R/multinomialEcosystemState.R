@@ -1004,7 +1004,8 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @author Adam Klimes
 #' @export
 #'
-slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = ""){
+slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "",
+                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e")){
   resp <- mod$data[[1]]
   parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
   svar <- labels(terms(form))
@@ -1039,8 +1040,10 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = ""){
     dens <- dens * rep(unlist(parsVal["prob", ]), each = nrow(dens))
     dens <- rowSums(dens)
     lines(xx, dens / max(dens))
-    abline(v = parsVal["est", ], lty = 2)
+    rgbVec <- col2rgb(setCol)
+    cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal["prob", ] * 215, maxColorValue = 255)
+    abline(v = parsVal["est", ], lty = 2, lwd = 3, col = cols)
   }
   plot(range(resp), c(0, 1), type = "n", ylab = "Probability density (st.)", xlab = xlab)
-  lapply(parsTab, plotSlice, value, mod)
+  invisible(lapply(parsTab, plotSlice, value, mod))
 }
