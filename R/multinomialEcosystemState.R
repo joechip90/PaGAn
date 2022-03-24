@@ -977,7 +977,7 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4){
   auxSummary <- function(x)
     c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
   out <- lapply(varsSamples, function(x, digit) round(t(apply(x, 2, auxSummary)), digit), digit)
-  if (length(out) == 1) out <- out[[1]]
+#  if (length(out) == 1) out <- out[[1]]
   out
 }
 
@@ -989,15 +989,35 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4){
 #' @param form formula with one predictor specifying which variables to plot
 #' @param mod an object of class "mesm"
 #' @param value value of the preditor specified by \code{"form"} where the slice is done
+#' @param byChains if slice should be done for each chain separately
 #'
 #' @return Returns NULL
 #'
 #' @author Adam Klimes
 #' @export
 #'
-slice.mesm <- function(form, mod, value = 0){
+slice.mesm <- function(form, mod, value = 0, byChains = TRUE){
   resp <- mod$data[[1]]
-  summary.mesm(mod)
+  parsTab <- summary.mesm(mod, byChains = byChains)
+  svar <- labels(terms(form))
+  Nstates <- mod$constants$numStates
+  invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
+                    logit = function(x) exp(x)/(1+exp(x)))
+  plotSlice <- function(pars, value){
+    getPars <- function(curState, pars, value){
+      auxExtract <- function(toGet, curState, pars, value){
+        sum(pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"], pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"] * value)
+      }
+      est <- auxExtract("stateVal", curState, pars, value)
+      prec <- auxExtract("statePrec", curState, pars, value)
+      prob <- auxExtract("stateProb", curState, pars, value)
+      c(est = est, prec = prec, prob = prob)
+    }
+    parsVal <- data.frame(lapply(1:Nstates, getPars, pars, value))
+    colnames(parsVal) <- paste0("State", 1:Nstates)
+    parsVal["prob", 1] <- 0
+    parsVal["prob", ] <- exp(parsVal["prob", ]) / sum(exp(parsVal["prob", ]))
+  }
+  plot(range(resp), c(0, 1), type = "n", ylab = "Probability density")
+  lapply(parsTab, plotSlice, value)
 }
-str(fitmod, 1)
-
