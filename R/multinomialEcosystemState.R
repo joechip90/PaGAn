@@ -1044,6 +1044,9 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "",
     cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal["prob", ] * 215, maxColorValue = 255)
     abline(v = parsVal["est", ], lty = 2, lwd = 3, col = cols)
   }
-  plot(range(resp), c(0, 1), type = "n", ylab = "Probability density (st.)", xlab = xlab)
+  plot(range(resp), c(1, 0), type = "n", ylab = "Potential energy", xlab = xlab, ylim = c(1, 0), axes = FALSE, yaxs = "i")
+  axis(1)
+  axis(2, labels = 0:5/5, at = 5:0/5)
+  box(bty = "l")
   invisible(lapply(parsTab, plotSlice, value, mod))
 }
