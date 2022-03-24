@@ -891,7 +891,7 @@ fitMultinomialEcosystemState <- function(
 #'
 plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                      drawXaxis = TRUE, ...) {
+                      drawXaxis = TRUE, SDmult = 1, ...) {
   resp <- mod$data[[1]]
   dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
                                               length(resp)])
@@ -910,7 +910,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
-  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.15, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
+  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
   auxLines <- function(chain, dat, mod){
     nstates <- length(mod$initialValues$intercept_stateVal)
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
@@ -942,8 +942,8 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
       yEst <- do.call(invlink, list(valInt[i] + valCov[i] * xx))
       segments(head(xx, -1), head(yEst, -1), x1 = tail(xx, -1), y1 = tail(yEst, -1), col = cols, lty = chain, lwd = 3)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals)), col = setCol[i], lty = 2, lwd = 1)
-      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals)), col = setCol[i], lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
+      lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
     }
     out <- cbind(valInt, valCov)
     colnames(out) <- c("Intercept", svar)
