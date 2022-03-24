@@ -963,7 +963,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #'
 #' @param object an object of class "mesm"
 #' @param byChains if the summary should be calculated for each chain separately
-#' @param digit integer specifying the number of decimal places to be used
+#' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
 #' @param absInt if intercepts for state values should be absolute (by default, they represent differences)
 #'
 #' @return Returns data.frame of quantiles of posterior of parameters
@@ -983,8 +983,9 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
   if (absInt) varsSamples <- lapply(varsSamples, sepInt)
   auxSummary <- function(x)
     c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
-  out <- lapply(varsSamples, function(x, digit) round(t(apply(x, 2, auxSummary)), digit), digit)
-#  if (length(out) == 1) out <- out[[1]]
+  out <- lapply(varsSamples, function(x) t(apply(x, 2, auxSummary)))
+  # if (length(out) == 1) out <- out[[1]]
+  if (!is.null(digit)) out <- lapply(out, round, digit)
   out
 }
 
