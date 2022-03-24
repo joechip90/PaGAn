@@ -959,9 +959,10 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @title Summarize Multinomial Ecosystem State Model
 #'
 #' @description This function ćalculates posterior quantiles of parameters of
-#' Multinomial Ecosystem State Model across all chains
+#' Multinomial Ecosystem State Model across all chains or for each chain separately
 #'
 #' @param object an object of class "mesm"
+#' @param byChains if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used
 #'
 #' @return Returns data.frame of quantiles of posterior of parameters
@@ -969,11 +970,34 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @author Adam Klimes
 #' @export
 #'
-summary.mesm <- function(object, digit = 4){
+summary.mesm <- function(object, byChains = FALSE, digit = 4){
   varsSamples <- lapply(object$mcmcSamples$samples,
     function(x) x[, !grepl(paste0("^lifted|^linState|^", names(object$data)), colnames(x))])
-  allSamples <- do.call(rbind, varsSamples)
+  if (!byChains) varsSamples <- list(do.call(rbind, varsSamples))
   auxSummary <- function(x)
     c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
-  round(t(apply(allSamples, 2, auxSummary)), digit)
+  out <- lapply(varsSamples, function(x, digit) round(t(apply(x, 2, auxSummary)), digit), digit)
+  if (length(out) == 1) out <- out[[1]]
+  out
 }
+
+### 3.3. ==== Plot slice from Multinomial Ecosystem State Model ====
+#' @title Plot slice from Multinomial Ecosystem State Model
+#'
+#' @description This function plots probability density for given predictor value
+#'
+#' @param form formula with one predictor specifying which variables to plot
+#' @param mod an object of class "mesm"
+#' @param value value of the preditor specified by \code{"form"} where the slice is done
+#'
+#' @return Returns NULL
+#'
+#' @author Adam Klimes
+#' @export
+#'
+slice.mesm <- function(form, mod, value = 0){
+  resp <- mod$data[[1]]
+  summary.mesm(mod)
+}
+str(fitmod, 1)
+
