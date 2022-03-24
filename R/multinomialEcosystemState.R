@@ -964,16 +964,23 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @param object an object of class "mesm"
 #' @param byChains if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used
+#' @param absInt if intercepts for state values should be absolute (by default, they represent differences)
 #'
 #' @return Returns data.frame of quantiles of posterior of parameters
 #'
 #' @author Adam Klimes
 #' @export
 #'
-summary.mesm <- function(object, byChains = FALSE, digit = 4){
+summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
   varsSamples <- lapply(object$mcmcSamples$samples,
     function(x) x[, !grepl(paste0("^lifted|^linState|^", names(object$data)), colnames(x))])
   if (!byChains) varsSamples <- list(do.call(rbind, varsSamples))
+  sepInt <- function(samp){
+    scol <- grepl("intercept_stateVal", colnames(samp))
+    samp[, scol] <- t(apply(samp, 1, function(x, scol) cumsum(x[scol]), scol))
+    samp
+  }
+  if (absInt) varsSamples <- lapply(varsSamples, sepInt)
   auxSummary <- function(x)
     c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
   out <- lapply(varsSamples, function(x, digit) round(t(apply(x, 2, auxSummary)), digit), digit)
