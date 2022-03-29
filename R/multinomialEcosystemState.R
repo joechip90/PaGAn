@@ -891,7 +891,7 @@ fitMultinomialEcosystemState <- function(
 #'
 plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                      drawXaxis = TRUE, SDmult = 1, ...) {
+                      drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
   resp <- mod$data[[1]]
   dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
                                               length(resp)])
@@ -911,29 +911,31 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
   if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
-  auxLines <- function(chain, dat, mod){
-    nstates <- length(mod$initialValues$intercept_stateVal)
+  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  auxLines <- function(parsChain, dat, mod){
+    nstates <- mod$constants$numStates
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
     ind <- NULL
+    cNames <- rownames(parsChain)
     if (nstates > 1) {
       ind <- paste0("[", 1:nstates, "]")
-      probInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateProb", ind), drop = FALSE], na.rm = TRUE)
+      probInt <- parsChain[paste0("intercept_stateProb", ind), "mean"]
     }
-    cNames <- colnames(mod$mcmcSamples$samples[[chain]])
-    valInt <- cumsum(colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateVal", ind), drop = FALSE]))
-    precInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_statePrec", ind), drop = FALSE])
-    valCov <- if (paste0(svar, "_stateVal", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateVal", ind), drop = FALSE]) else rep(0, nstates)
-    precCov <- if (paste0(svar, "_statePrec", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_statePrec", ind), drop = FALSE]) else rep(0, nstates)
-    probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateProb", ind), drop = FALSE], na.rm = TRUE) else rep(0, nstates)
+    valInt <- parsChain[paste0("intercept_stateVal", ind), "mean"]
+    precInt <- parsChain[paste0("intercept_statePrec", ind), "mean"]
+    valCov <- if (paste0(svar, "_stateVal", ind[1]) %in% cNames) parsChain[paste0(svar, "_stateVal", ind), "mean"] else rep(0, nstates)
+    precCov <- if (paste0(svar, "_statePrec", ind[1]) %in% cNames) parsChain[paste0(svar, "_statePrec", ind), "mean"] else rep(0, nstates)
+    probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) parsChain[paste0(svar, "_stateProb", ind), "mean"] else rep(0, nstates)
     if (nstates > 1) {
       probVals <- as.matrix(data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov)))
+      probVals[is.na(probVals)] <- 0
       probVals <- probVals / rowSums(probVals)
       probVals[is.nan(probVals)] <- 1
       }
     for (i in 1:nstates){
       cols <- setCol[i]
       if (nstates > 1) {
-        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = setCol[i], lty = chain, lwd = 3)
+        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = setCol[i], lwd = 3)
         if (transCol) {
           rgbVec <- col2rgb(cols)[, 1]
           cols <- rgb(rgbVec[1], rgbVec[2], rgbVec[3], alpha = 40 + probVals[, i] * 215, maxColorValue = 255)
@@ -941,7 +943,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       }
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
       yEst <- do.call(invlink, list(valInt[i] + valCov[i] * xx))
-      segments(head(xx, -1), head(yEst, -1), x1 = tail(xx, -1), y1 = tail(yEst, -1), col = cols, lty = chain, lwd = 3)
+      segments(head(xx, -1), head(yEst, -1), x1 = tail(xx, -1), y1 = tail(yEst, -1), col = cols, lwd = 3)
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
     }
@@ -950,7 +952,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
     rownames(out) <- paste0("stateVal_state", 1:nstates)
     out
   }
-  out <- lapply(seq_along(mod$mcmcSamples$samples), auxLines, dat, mod)
+  out <- lapply(parsTab, auxLines, dat, mod)
   out <- setNames(out, paste("chain", seq_along(mod$mcmcSamples$samples), sep = "_"))
   invisible(out)
 }
