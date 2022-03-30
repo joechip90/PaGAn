@@ -947,14 +947,8 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
     }
-    out <- cbind(valInt, valCov)
-    colnames(out) <- c("Intercept", svar)
-    rownames(out) <- paste0("stateVal_state", 1:nstates)
-    out
   }
-  out <- lapply(parsTab, auxLines, dat, mod)
-  out <- setNames(out, paste("chain", seq_along(mod$mcmcSamples$samples), sep = "_"))
-  invisible(out)
+  invisible(lapply(parsTab, auxLines, dat, mod))
 }
 
 ### 3.2. ==== Summary of Multinomial Ecosystem State Model ====
@@ -1006,7 +1000,7 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @author Adam Klimes
 #' @export
 #'
-slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "",
+slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
                        setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e")){
   resp <- mod$data[[1]]
   parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
@@ -1014,6 +1008,7 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "",
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
+  xx <- seq(min(resp), max(resp), length.out = 1000)
   plotSlice <- function(pars, value, mod){
     getPars <- function(curState, pars, value){
       auxExtract <- function(toGet, curState, pars, value){
@@ -1037,18 +1032,24 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "",
                    gaussian = dnorm,
                    gamma = dgamma,
                    beta = dbeta)
-    xx <- seq(min(resp), max(resp), length.out = 1000)
     dens <- apply(parsD, 2, function(pars) do.call(dfun, list(xx, pars[1], pars[2])))
     dens <- dens * rep(unlist(parsVal["prob", ]), each = nrow(dens))
     dens <- rowSums(dens)
-    lines(xx, dens / max(dens))
+    densSt <- dens / max(dens)
     rgbVec <- col2rgb(setCol)
     cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal["prob", ] * 215, maxColorValue = 255)
-    abline(v = parsVal["est", ], lty = 2, lwd = 3, col = cols)
+    if (doPlot){
+      lines(xx, densSt)
+      abline(v = parsVal["est", ], lty = 2, lwd = 3, col = cols)
+    }
+    densSt
   }
-  plot(range(resp), c(1, 0), type = "n", ylab = "Potential energy", xlab = xlab, ylim = c(1, 0), axes = FALSE, yaxs = "i")
-  axis(1)
-  axis(2, labels = 0:5/5, at = 5:0/5)
-  box(bty = "l")
-  invisible(lapply(parsTab, plotSlice, value, mod))
+  if (doPlot){
+    plot(range(resp), c(1, 0), type = "n", ylab = "Potential energy", xlab = xlab, ylim = c(1, 0), axes = FALSE, yaxs = "i")
+    axis(1)
+    axis(2, labels = 0:5/5, at = 5:0/5)
+    box(bty = "l")
+  }
+  out <- lapply(parsTab, plotSlice, value, mod)
+  c(out, list(resp = xx))
 }
