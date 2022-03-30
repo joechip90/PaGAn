@@ -928,7 +928,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
     probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) parsChain[paste0(svar, "_stateProb", ind), "mean"] else rep(0, nstates)
     if (nstates > 1) {
       probVals <- as.matrix(data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov)))
-      probVals[is.na(probVals)] <- 0
+      probVals[is.na(probVals)] <- 1
       probVals <- probVals / rowSums(probVals)
       probVals[is.nan(probVals)] <- 1
       }
