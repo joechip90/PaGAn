@@ -1072,6 +1072,7 @@ plotLandscape.mesm <- function(form, mod){
   svar <- labels(terms(form))
   pred <- mod$constants[[svar]]
   grad <- seq(min(pred), max(pred), length.out = 1000)
-  aa <- lapply(grad, function(x)
-    slice.mesm(form, mod, value = x, byChains = FALSE, doPlot = FALSE))
+  slices <- slice.mesm(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
+  mat <- do.call(rbind, slices[[1]])
+  image(mat)
 }
