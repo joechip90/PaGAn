@@ -995,7 +995,7 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @param value value of the preditor specified by \code{"form"} where the slice is done
 #' @param byChains if slice should be done for each chain separately
 #'
-#' @return Returns NULL
+#' @return Returns list of plotted values
 #'
 #' @author Adam Klimes
 #' @export
@@ -1012,35 +1012,36 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
   plotSlice <- function(pars, value, mod){
     getPars <- function(curState, pars, value){
       auxExtract <- function(toGet, curState, pars, value){
-        sum(pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"], pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"] * value)
+        pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"] + sum(pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"]) * value
       }
       est <- auxExtract("stateVal", curState, pars, value)
       prec <- auxExtract("statePrec", curState, pars, value)
       prob <- auxExtract("stateProb", curState, pars, value)
-      c(est = do.call(invlink, list(est)), sd = 1 / sqrt(exp(prec)), prob = prob)
+      cbind(est = do.call(invlink, list(est)), sd = 1 / sqrt(exp(prec)), prob = prob)
     }
-    parsVal <- data.frame(lapply(1:Nstates, getPars, pars, value))
-    colnames(parsVal) <- paste0("State", 1:Nstates)
-    parsVal["prob", 1] <- 0
-    parsVal["prob", ] <- exp(parsVal["prob", ]) / sum(exp(parsVal["prob", ]))
-    aux <- parsVal["est", ]
+    parsVal <- vapply(1:Nstates, getPars, FUN.VALUE = array(0, dim = c(length(value), 3)), pars, value)
+    parsVal[, "prob", 1] <- rep(0, length(value))
+    parsVal[, "prob", ] <- exp(parsVal[, "prob", ]) / rowSums(exp(parsVal[, "prob", , drop = FALSE]))
+    rownames(parsVal) <- paste0("value", seq_along(value))
+    aux <- parsVal[, "est", ]
+    auxDim <- c(length(value), Nstates, 2)
     parsD <- switch(as.character(mod$errorModel),
-                    gaussian = parsVal[c("est", "sd"), ],
-                    gamma = rbind(aux^2/parsVal["sd", ]^2, aux/parsVal["sd", ]^2),
-                    beta = rbind(aux*(aux*(1-aux)/parsVal["sd", ]^2-1), (aux*(1-aux)/parsVal["sd", ]^2-1)*(1-aux)))
+                    gaussian = array(c(parsVal[, "est", ], parsVal[, "sd", ]), dim = auxDim),
+                    gamma = array(c(aux^2/parsVal[, "sd", ]^2, aux/parsVal[, "sd", ]^2), dim = auxDim),
+                    beta = array(c(aux*(aux*(1-aux)/parsVal[, "sd", ]^2-1), (aux*(1-aux)/parsVal[, "sd", ]^2-1)*(1-aux)), dim = auxDim))
     dfun <- switch(as.character(mod$errorModel),
                    gaussian = dnorm,
                    gamma = dgamma,
                    beta = dbeta)
-    dens <- apply(parsD, 2, function(pars) do.call(dfun, list(xx, pars[1], pars[2])))
-    dens <- dens * rep(unlist(parsVal["prob", ]), each = nrow(dens))
-    dens <- rowSums(dens)
-    densSt <- dens / max(dens)
-    rgbVec <- col2rgb(setCol)
-    cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal["prob", ] * 215, maxColorValue = 255)
+    dens <- apply(parsD, 1, apply, 1, function(pars) do.call(dfun, list(xx, pars[1], pars[2])), simplify = FALSE)
+    dens <- Map(function(den, prob) den * rep(prob, each = nrow(den)), dens, data.frame(t(matrix(parsVal[, "prob", ], nrow = length(value)))))
+    dens <- lapply(dens, rowSums)
+    densSt <- lapply(dens, function(x) x / max(x))
     if (doPlot){
-      lines(xx, densSt)
-      abline(v = parsVal["est", ], lty = 2, lwd = 3, col = cols)
+      rgbVec <- col2rgb(setCol)
+      cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
+      lines(xx, densSt[[1]])
+      abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
     }
     densSt
   }
@@ -1051,5 +1052,26 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
     box(bty = "l")
   }
   out <- lapply(parsTab, plotSlice, value, mod)
-  c(out, list(resp = xx))
+  invisible(c(out, list(resp = xx)))
+}
+
+### 3.4. ==== Probability landscape from Multinomial Ecosystem State Model ====
+#' @title Plot probability landscape from Multinomial Ecosystem State Model
+#'
+#' @description This function plots probability landscape for given predictor
+#'
+#' @param form formula with one predictor specifying which variables to plot
+#' @param mod an object of class "mesm"
+#'
+#' @return Returns NULL
+#'
+#' @author Adam Klimes
+#' @export
+#'
+plotLandscape.mesm <- function(form, mod){
+  svar <- labels(terms(form))
+  pred <- mod$constants[[svar]]
+  grad <- seq(min(pred), max(pred), length.out = 1000)
+  aa <- lapply(grad, function(x)
+    slice.mesm(form, mod, value = x, byChains = FALSE, doPlot = FALSE))
 }
