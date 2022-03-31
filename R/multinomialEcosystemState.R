@@ -1068,11 +1068,33 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
 #' @author Adam Klimes
 #' @export
 #'
-plotLandscape.mesm <- function(form, mod){
+plotLandscape.mesm <- function(form, mod, ...){
   svar <- labels(terms(form))
+  resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
-  grad <- seq(min(pred), max(pred), length.out = 1000)
+  grad <- seq(min(pred), max(pred), length.out = 500)
   slices <- slice.mesm(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
-  mat <- do.call(rbind, slices[[1]])
-  image(mat)
+  mat <- do.call(cbind, slices[[1]])
+  image(t(mat), ...)
+  findMin <- function(x){
+    dfXin <- diff(x)
+    seqCount <- diff(c(0, which(dfXin != 0), length(x)))
+    Nflat <- rep(seqCount, seqCount) - 1
+    xClear <- x[c(TRUE,  dfXin != 0)]
+    dfX <- diff(xClear)
+    loc <- which(diff(sign(dfX)) == 2) + 1
+    if (dfX[1] > 0) loc <- c(1, loc)
+    if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+    inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
+    inLoc[inLoc %in% which(dfXin == 0)] <- 0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
+    inLoc
+  }
+  plotMin <- function(matCol, xCoors) {
+    yCoors <- seq(0, 1, length.out = nrow(mat))
+    mins <- findMin(matCol)
+    points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
+  }
+  invisible(Map(plotMin, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat))))
+  stRange <- function(x) (x - min(x)) / max(x - min(x))
+  points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
 }
