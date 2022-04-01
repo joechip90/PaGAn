@@ -1062,8 +1062,9 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
 #'
 #' @param form formula with one predictor specifying which variables to plot
 #' @param mod an object of class "mesm"
+#' @param ... parameters passed to image()
 #'
-#' @return Returns NULL
+#' @return Returns Probability density (scaled to [0,1]) matrix.
 #'
 #' @author Adam Klimes
 #' @export
@@ -1094,7 +1095,8 @@ plotLandscape.mesm <- function(form, mod, ...){
     mins <- findMin(matCol)
     points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
   }
-  invisible(Map(plotMin, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat))))
+  Map(plotMin, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
   stRange <- function(x) (x - min(x)) / max(x - min(x))
   points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
+  invisible(mat)
 }
