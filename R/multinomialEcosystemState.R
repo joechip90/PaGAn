@@ -1090,12 +1090,14 @@ plotLandscape.mesm <- function(form, mod, ...){
     inLoc[inLoc %in% which(dfXin == 0)] <- 0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
     inLoc
   }
-  plotMin <- function(matCol, xCoors) {
+  plotMinMax <- function(matCol, xCoors) {
     yCoors <- seq(0, 1, length.out = nrow(mat))
     mins <- findMin(matCol)
+    maxs <- findMin(-matCol)
+    points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
     points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
   }
-  Map(plotMin, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
+  Map(plotMinMax, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
   stRange <- function(x) (x - min(x)) / max(x - min(x))
   points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
   invisible(mat)
