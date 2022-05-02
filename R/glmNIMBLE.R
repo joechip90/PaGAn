@@ -28,6 +28,9 @@
 #' @param mcmcParams A list containing parameters regulating the Markov chain Monte Carlo
 #' algorithm applied in NIMBLE.  This list needs the following named elements: numRuns, numChains,
 #' numBurnIn, thinDensity, predictThinDensity
+#' @param numCores An \code{integer} scalar denoting the number of cores to use.  MCMC chains
+#' will be distributed across the cores.  A value of \code{NA} or \code{0} results in the number
+#' of cores being set equal to that returned by \code{\link[parallel::detectCores]{detectCores}}
 #'
 #' @details \code{mcmcParams} is a list containing the following elements:
 #' \itemize{
@@ -67,11 +70,11 @@
 #' }
 #'
 #' @seealso \code{\link[DHARMa::createDHARMa]{createDHARMa}} \code{\link[nimble::nimbleCode]{nimbleCode}}
-#' \code{\link[nimble::buildMCMC]{buildMCMC}} \code{\link[glmNIMBLE]{glmNIMBLE}} \code{\link[errorFamilies]{errorFamilies()}}
+#' \code{\link[nimble::buildMCMC]{buildMCMC}} \code{\link[glmNIMBLE]{glmNIMBLE}} \code{\link[errorFamilies]{errorFamilies}}
 #' \code{\link[base::glm]{glm}}
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #'
-glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs = "none", modelSuffix = "", mcmcParams = list())  {
+glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs = "none", modelSuffix = "", mcmcParams = list(), numCores = 1)  {
   inMCMCParams <- sanityCheckMCMCParameters(mcmcParams)
   # Create the linear model node specifications
   modelNodeDefinitions <- linearModelToNodeDefinition(modelFormula, inputData, errorFamily, regCoeffs, modelSuffix)
@@ -94,20 +97,27 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
     initValues[[paste("intercept", as.character(modelSuffix), "Coeff", sep = "")]] <- applyLink(
       mean(modelNodeDefinitions$inputData[[modelNodeDefinitions$responseDataNodeNames[1]]] / numTrials, na.rm = TRUE), modelNodeDefinitions$link)
   }
+  # Compile and run the model
+  modelOutputs <- mcmcNIMBLERun(modelCode, modelNodeDefinitions$inputData, modelNodeDefinitions$inputConstants, nonDataNodeNames, predictionNodeNames, initValues, inMCMCParams, numCores, TRUE)
+  uncompiledModel <- modelOutputs$uncompiledModel
+  compiledModel <- modelOutputs$compiledModel
+  uncompiledMCMC <- modelOutputs$uncompiledMCMC
+  compiledMCMC <- modelOutputs$compiledMCMC
+  mcmcOutput <- modelOutputs$mcmcOutput
   # Define the model object
-  uncompiledModel <- nimbleModel(modelCode, constants = modelNodeDefinitions$inputConstants, data = modelNodeDefinitions$inputData,
-    inits = initValues, calculate = TRUE)
+  #uncompiledModel <- nimbleModel(modelCode, constants = modelNodeDefinitions$inputConstants, data = modelNodeDefinitions$inputData,
+  #  inits = initValues, calculate = TRUE)
   # Compile the model object
-  compiledModel <- compileNimble(uncompiledModel)
+  #compiledModel <- compileNimble(uncompiledModel)
   #Create an MCMC object
-  uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE,
-    monitors = nonDataNodeNames, monitors2 = predictionNodeNames,
-    thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity)
+  #uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE,
+  #  monitors = nonDataNodeNames, monitors2 = predictionNodeNames,
+  #  thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity)
   # Compile the MCMC object
-  compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
+  #compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
   # Run the MCMC
-  mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCParams$numRuns, nburnin = inMCMCParams$numBurnIn, nchains = inMCMCParams$numChains,
-    thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = TRUE, summary = TRUE)
+  #mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCParams$numRuns, nburnin = inMCMCParams$numBurnIn, nchains = inMCMCParams$numChains,
+  #  thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = TRUE, summary = TRUE)
   # Retrieve the offset values (if there are any)
   offsetVals <- 0.0
   if(!is.null(modelNodeDefinitions$inputData[[paste("offset", as.character(modelSuffix), sep = "")]])) {

@@ -28,28 +28,168 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     # of cores equal to the number present in the system
     inNumCores <- parallel::detectCores()
   }
+  # Sanity check the WAIC inclusion criterion
+  inWAIC <- tryCatch(as.logical(WAIC), error = function(err) {
+    stop("error encountered during processing of the WAIC inclusion term: ", err)
+  })
+  if(length(inWAIC) <= 0) {
+    stop("error encountered during processing of the WAIC inclusion term: input vector has length 0")
+  } else if(length(inWAIC) > 1) {
+    warning("WAIC inclusion terms has a length greater than one: only the first element will be used")
+    inWAIC <- inWAIC[1]
+  }
+  if(is.na(inWAIC)) {
+    inWAIC <- FALSE
+  }
   # Set the number of cores equal to the number of chains
-  inNumCores <- min(inNumCores, mcmcList$numChains + 1)
+  inNumCores <- min(inNumCores, inMCMCList$numChains, parallel::detectCores() - 1)
   # Initialise a set of output objects
-  mcmcOut <- NULL
+  mcmcOutput <- NULL
   uncompiledModel <- NULL
   compiledModel <- NULL
   uncompiledMCMC <- NULL
   compiledMCMC <- NULL
   if(inNumCores <= 1) {
     # Define the model object
-    uncompiledModel <- nimbleModel(modelCode, constants = modelNodeDefinitions$inputConstants, data = modelNodeDefinitions$inputData, inits = initValues, calculate = TRUE)
+    uncompiledModel <- nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
     # Compile the model object
     compiledModel <- compileNimble(uncompiledModel)
     # Create an MCMC object
-    uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity)
+    uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = inWAIC, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = inMCMCList$thinDensity, thin2 = inMCMCList$predictThinDensity)
     # Compile the MCMC object
     compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
     # Run the MCMC
-    mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCParams$numRuns, nburnin = inMCMCParams$numBurnIn, nchains = inMCMCParams$numChains, thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = TRUE, summary = TRUE)
+    mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCList$numRuns, nburnin = inMCMCList$numBurnIn, nchains = inMCMCList$numChains, thin = inMCMCList$thinDensity, thin2 = inMCMCList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = inWAIC, summary = TRUE)
   } else {
-
+    # Create a function to run across multiple cores
+    parallelRun <- function(procNum, modelCode, data, constants, paramNodeNames, predictionNodeNames, inits, mcmcList, WAIC, tempFiles, chainVec, seedVec) {
+      processCompleteTxt <- "Process complete"
+      outObject <- NULL
+      if(procNum > 0) {
+        cat("Initialising process...\n")
+        # Initialise the libraries in the local process
+        library(coda)
+        library(nimble)
+        # Define the model object
+        cat("Defining model object...\n")
+        uncompiledModel <- nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
+        # Compile the model object
+        cat("Compiling model...\n")
+        compiledModel <- compileNimble(uncompiledModel)
+        # Create an MCMC object
+        cat("Creating MCMC object...\n")
+        uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity)
+        # Compile the MCMC object
+        cat("Compiling MCMC object...\n")
+        compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
+        # Run the MCMC
+        cat("Running MCMC...\n")
+        mcmcOutput <- runMCMC(compiledMCMC, niter = mcmcList$numRuns, nburnin = mcmcList$numBurnIn, nchains = chainVec[procNum], thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = FALSE, summary = TRUE, setSeed = seedVec[procNum])
+        # Print the process complete text
+        cat(processCompleteTxt, "\n", sep = "")
+        # Create an output object
+        outObject <- list(
+          uncompiledModel = uncompiledModel,
+          compiledModel = compiledModel,
+          uncompiledMCMC = uncompiledMCMC,
+          compiledMCMC = compiledMCMC,
+          mcmcOutput = mcmcOutput
+        )
+      } else {
+        # The first process is a reporting process that reports back on the current status of the other processes
+        waitingText <- "Waiting for processes to initialise ...\n"
+        cat(waitingText)
+        while(any(!sapply(X = tempFiles, FUN = file.exists))) {
+          Sys.sleep(10)
+        }
+        # Retrieve the text in the temporary files
+        retrieveProcessText <- function(tempFiles) {
+          sapply(X = tempFiles, FUN = function(curFile) {
+            paste(readLines(curFile, warn = FALSE), collapse = "\n")
+          })
+        }
+        # Display the output text
+        displayOutputText <- function(processText, outMessage) {
+          # Clear the buffer of the last status message
+          outMsgChar <- nchar(outMessage)
+          if(outMsgChar > 0) {
+            cat(rep("\r", outMsgChar), sep = "")
+          }
+          # Create a new status message
+          outMessage <- paste("\n--- PROCESS ", 1:length(chainVec), " (", chainVec, " chain", ifelse(chainVec > 1, "s", ""), ") ---\n\n", processText, "\n", sep = "", collapse = "\n")
+          cat(outMessage)
+          outMessage
+        }
+        # Intermittently query the status files and report them
+        processText <- retrieveProcessText(tempFiles)
+        outMessage <- ""
+        while(any(!sapply(X = processText, FUN = function(curText, processCompleteTxt) { grepl(paste(processCompleteTxt, "\\s*$", sep = ""), curText, perl = TRUE) }, processCompleteTxt = processCompleteTxt))) {
+          # Display the current status
+          outMessage <- displayOutputText(processText, outMessage)
+          Sys.sleep(20)
+          # Retrieve the text in the temporary files
+          processText <- retrieveProcessText(tempFiles)
+        }
+        outMessage <- displayOutputText(processText, outMessage)
+      }
+      outObject
+    }
+    # Calculate a balancer to distribute the chains between cores
+    chainVec <- rep(ceiling(inMCMCList$numChains / inNumCores), inNumCores)
+    overCount <- sum(chainVec) - inMCMCList$numChains
+    if(overCount != 0) {
+      chainVec[1:overCount] <- chainVec[1:overCount] + ifelse(overCount > 0, -1, 1)
+    }
+    # Initialise a cluster
+    parCluster <- parallel::makeCluster(inNumCores + 1, outfile = "")
+    logFiles <- replicate(inNumCores, tempfile())
+    clusterApply(cl = parCluster, x = append(list(stdout()), as.list(logFiles)), fun = function(inVal) {
+      sink(inVal, type = "output")
+      sink(stdout(), type = "message")
+    })
+    # Call the model with the chains distributed across the cores
+    parallelOutputs <- tryCatch(clusterApply(cl = parCluster, x = 0:inNumCores, fun = parallelRun,
+      modelCode = modelCode, data = data, constants = constants, paramNodeNames = paramNodeNames, predictionNodeNames = predictionNodeNames,
+      inits = inits, mcmcList = inMCMCList, WAIC = inWAIC, tempFiles = logFiles, chainVec = chainVec, seedVec = floor(runif(inNumCores) * .Machine$integer.max)),
+      error = function(err) {
+        stopCluster(parCluster)
+        stop(err)
+    })
+    # Stop the cluster after the models are run
+    stopCluster(parCluster)
+    # Stitch together the outputs from the parallel processes
+    uncompiledModel <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$uncompiledModel })
+    compiledModel <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$compiledModel })
+    uncompiledMCMC <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$uncompiledMCMC })
+    compiledMCMC <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$compiledMCMC })
+    # Create amalgamated coda objects from the runs spread across the processes
+    mcmcOutput <- list(
+      samples = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$mcmcOutput$samples })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
+      samples2 = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$mcmcOutput$samples2 })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
+      summary = NULL, WAIC = NULL
+    )
+    # Recreate the summary information for the samples across the chains
+    mcmcOutput$summary <- setNames(c(lapply(X = 1:inMCMCList$numChains, FUN = function(inIndex, samplesList, samplesTwoList) {
+      rbind(nimble::samplesSummary(as.matrix(samplesList[[inIndex]])), nimble::samplesSummary(as.matrix(samplesTwoList[[inIndex]])))
+    }, samplesList = mcmcOutput$samples, samplesTwoList = mcmcOutput$samples2), list(rbind(
+      nimble::samplesSummary(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix))),
+      nimble::samplesSummary(do.call(rbind, lapply(X = mcmcOutput$samples2, FUN = as.matrix)))
+    ))), c(paste("chain", 1:inMCMCList$numChains, sep = ""), "all.chains"))
+    # Calculate the WAIC using all the samples spread across the processes
+    cat("Recompiling model for WAIC calculation...\n")
+    tempModel <- nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
+    tempCModel <- compileNimble(tempModel)
+    tempMCMC <- buildMCMC(tempModel, enableWAIC = TRUE, monitors = paramNodeNames, thin = inMCMCList$thinDensity)
+    tempCMCMC <- compileNimble(tempMCMC, project = tempModel)
+    mcmcOutput$WAIC <- calculateWAIC(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix)), model = tempModel)
   }
+  list(
+    uncompiledModel = uncompiledModel,
+    compiledModel = compiledModel,
+    uncompiledMCMC = uncompiledMCMC,
+    compiledMCMC = compiledMCMC,
+    mcmcOutput = mcmcOutput
+  )
 }
 
 sanityCheckMCMCParameters <- function(inputList) {

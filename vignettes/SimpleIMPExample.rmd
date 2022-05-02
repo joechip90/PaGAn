@@ -1,0 +1,37 @@
+---
+title: "Simple IPM Example"
+author: "Joseph Chipperfield"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Simple IPM Example}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Integral Projection Models in PaGAn
+
+There are a number of fantastic packages for performing analysis of data using integral projection models (IPMs) in R such as [IPMpack](https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210x.12001) and [impr](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.13683).  PaGAn also has its own implementation of Integral Projection Models. The PaGAn implementation of IPM has been designed with a focus on flexibility and an ability to embed the outputs from these models into further analysis. Under the hood PaGAn uses Bayesian techniques (powered by [NIMBLE](https://www.tandfonline.com/doi/full/10.1080/10618600.2016.1172487)) which means that full posterior estimates of the coefficients in vital rate functions, kernels, and population-level summaries.
+
+```{r libraries}
+# This chunk will be removed once the package is completed - in the meantime it loads the required libraries for the analysis and imports the relevant source files from the project GitHub pages
+library(nimble)
+library(parallel)
+library(coda)
+library(DHARMa)
+library(ggplot2)
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
