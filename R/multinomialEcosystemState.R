@@ -1001,14 +1001,20 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @export
 #'
 slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
-                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e")){
+                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
+                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1){
   resp <- mod$data[[1]]
   parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
-  xx <- seq(min(resp), max(resp), length.out = 1000)
+  xSample <- 1000
+  xx <- seq(min(resp), max(resp), length.out = xSample)
+  if (addEcos) {
+    pred <- mod$constants[[svar]]
+    xx <- c(xx, resp[abs(pred - value) < ecosTol])
+  }
   plotSlice <- function(pars, value, mod){
     getPars <- function(curState, pars, value){
       auxExtract <- function(toGet, curState, pars, value){
@@ -1040,15 +1046,16 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
     if (doPlot){
       rgbVec <- col2rgb(setCol)
       cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
-      lines(xx, densSt[[1]])
-      abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
+      lines(xx[1:xSample], densSt[[1]][1:xSample])
+      if (plotEst) abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
+      if (addEcos) points(tail(xx, -xSample), tail(densSt[[1]], -xSample), pch = 16)
     }
     densSt
   }
   if (doPlot){
     plot(range(resp), c(1, 0), type = "n", ylab = "Potential energy", xlab = xlab, ylim = c(1, 0), axes = FALSE, yaxs = "i")
-    axis(1)
-    axis(2, labels = 0:5/5, at = 5:0/5)
+    if (xaxis) axis(1)
+    axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
     box(bty = "l")
   }
   out <- lapply(parsTab, plotSlice, value, mod)
@@ -1069,7 +1076,7 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
 #' @author Adam Klimes
 #' @export
 #'
-plotLandscape.mesm <- function(form, mod, ...){
+plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
   svar <- labels(terms(form))
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
@@ -1097,8 +1104,8 @@ plotLandscape.mesm <- function(form, mod, ...){
     points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
     points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
   }
-  Map(plotMinMax, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
+  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
   stRange <- function(x) (x - min(x)) / max(x - min(x))
-  points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
+  if (addPoints) points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
   invisible(mat)
 }
