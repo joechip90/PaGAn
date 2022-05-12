@@ -882,6 +882,14 @@ fitMultinomialEcosystemState <- function(
 #'
 #' @param form formula, such as y ~ pred, specifying variables to be plotted
 #' @param mod an object of class "mesm"
+#' @param yaxis vector of values to be marked on y-axis
+#' @param transCol logical value indicating usage of transparent colours
+#' @param addWAIC logical value indication display of WAIC in upper right corner of the plot
+#' @param setCol vector of colours to be used for states
+#' @param drawXaxis logical value indicating whether values should be marked on x-axis
+#' @param SDmult scalar multiplying visualized standard deviation (to make lines for small standard deviation visible)
+#' @param byChain logical value indicating whether to plot states for each chain
+#' @param ... additional arguments passed to plot
 #'
 #' @return Returns invisibly a list containing posterior means of state value
 #' coefficients for each chain used in plotting.
@@ -954,13 +962,13 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 ### 3.2. ==== Summary of Multinomial Ecosystem State Model ====
 #' @title Summarize Multinomial Ecosystem State Model
 #'
-#' @description This function ćalculates posterior quantiles of parameters of
+#' @description This function calculates posterior quantiles of parameters of
 #' Multinomial Ecosystem State Model across all chains or for each chain separately
 #'
 #' @param object an object of class "mesm"
-#' @param byChains if the summary should be calculated for each chain separately
+#' @param byChains logical value indicating if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
-#' @param absInt if intercepts for state values should be absolute (by default, they represent differences)
+#' @param absInt logical value indicating if intercepts for state values should be absolute (by default, they represent differences)
 #'
 #' @return Returns data.frame of quantiles of posterior of parameters
 #'
@@ -993,7 +1001,14 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @param form formula with one predictor specifying which variables to plot
 #' @param mod an object of class "mesm"
 #' @param value value of the preditor specified by \code{"form"} where the slice is done
-#' @param byChains if slice should be done for each chain separately
+#' @param byChains logical value indicating if slice should be done for each chain separately
+#' @param xlab string used as label for x-axis
+#' @param doPlot logical value indicating if plotting should be done
+#' @param setCol vector of colours to be used for visualization of estimated states
+#' @param plotEst logical value indicating if estimated states should be visualized
+#' @param xaxis logical value indicating if values should be marked on x-axis
+#' @param addEcos logical value indicating if ecosystems within \code{"ecosTol"} from \code{"value"} should be visualized on the line
+#' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
 #'
 #' @return Returns list of plotted values
 #'
@@ -1069,6 +1084,8 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
 #'
 #' @param form formula with one predictor specifying which variables to plot
 #' @param mod an object of class "mesm"
+#' @param addPoints logical value indicating if ecosystems should be visualized
+#' @param addMinMax logical value indicating if stable states and tipping points should be visualized
 #' @param ... parameters passed to image()
 #'
 #' @return Returns Probability density (scaled to [0,1]) matrix.
