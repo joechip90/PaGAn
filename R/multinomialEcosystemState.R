@@ -1000,7 +1000,8 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #'
 #' @param form formula with one predictor specifying which variables to plot
 #' @param mod an object of class "mesm"
-#' @param value value of the preditor specified by \code{"form"} where the slice is done
+#' @param value numeric vector of values of the preditor specified by \code{"form"} where the slice is done
+#' @param predValues named vector of values of other predictors
 #' @param byChains logical value indicating if slice should be done for each chain separately
 #' @param xlab string used as label for x-axis
 #' @param doPlot logical value indicating if plotting should be done
@@ -1009,38 +1010,39 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @param xaxis logical value indicating if values should be marked on x-axis
 #' @param addEcos logical value indicating if ecosystems within \code{"ecosTol"} from \code{"value"} should be visualized on the line
 #' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
+#' @param samples scalar specifying number of samples to be taken along predictor
 #'
 #' @return Returns list of plotted values
 #'
 #' @author Adam Klimes
 #' @export
 #'
-slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
+slice.mesm <- function(form, mod, value = 0, predValues = NULL, byChains = TRUE, xlab = "", doPlot = TRUE,
                        setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1){
+                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1, samples = 1000){
   resp <- mod$data[[1]]
   parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
-  xSample <- 1000
-  xx <- seq(min(resp), max(resp), length.out = xSample)
+  xx <- seq(min(resp), max(resp), length.out = samples)
   if (addEcos) {
     pred <- mod$constants[[svar]]
     xx <- c(xx, resp[abs(pred - value) < ecosTol])
   }
-  plotSlice <- function(pars, value, mod){
-    getPars <- function(curState, pars, value){
-      auxExtract <- function(toGet, curState, pars, value){
-        pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"] + sum(pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"]) * value
+  plotSlice <- function(pars, value, mod, predValues){
+    getPars <- function(curState, pars, value, predValues){
+      auxExtract <- function(toGet, curState, pars, value, predValues){
+        out <- pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"] + sum(pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"]) * value
+        out + sum(pars[which(rownames(pars) %in% paste0(names(predValues), "_", toGet, "[", curState, "]")), "mean"] * predValues)
       }
-      est <- auxExtract("stateVal", curState, pars, value)
-      prec <- auxExtract("statePrec", curState, pars, value)
-      prob <- auxExtract("stateProb", curState, pars, value)
+      est <- auxExtract("stateVal", curState, pars, value, predValues)
+      prec <- auxExtract("statePrec", curState, pars, value, predValues)
+      prob <- auxExtract("stateProb", curState, pars, value, predValues)
       cbind(est = do.call(invlink, list(est)), sd = 1 / sqrt(exp(prec)), prob = prob)
     }
-    parsVal <- vapply(1:Nstates, getPars, FUN.VALUE = array(0, dim = c(length(value), 3)), pars, value)
+    parsVal <- vapply(1:Nstates, getPars, FUN.VALUE = array(0, dim = c(length(value), 3)), pars, value, predValues)
     parsVal[, "prob", 1] <- rep(0, length(value))
     parsVal[, "prob", ] <- exp(parsVal[, "prob", ]) / rowSums(exp(parsVal[, "prob", , drop = FALSE]))
     rownames(parsVal) <- paste0("value", seq_along(value))
@@ -1061,9 +1063,9 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
     if (doPlot){
       rgbVec <- col2rgb(setCol)
       cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
-      lines(xx[1:xSample], densSt[[1]][1:xSample])
+      lines(xx[1:samples], densSt[[1]][1:samples])
       if (plotEst) abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
-      if (addEcos) points(tail(xx, -xSample), tail(densSt[[1]], -xSample), pch = 16)
+      if (addEcos) points(tail(xx, -samples), tail(densSt[[1]], -samples), pch = 16)
     }
     densSt
   }
@@ -1073,7 +1075,7 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
     axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
     box(bty = "l")
   }
-  out <- lapply(parsTab, plotSlice, value, mod)
+  out <- lapply(parsTab, plotSlice, value, mod, predValues)
   invisible(c(out, list(resp = xx)))
 }
 
@@ -1125,4 +1127,26 @@ plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ..
   stRange <- function(x) (x - min(x)) / max(x - min(x))
   if (addPoints) points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
   invisible(mat)
+}
+
+### 3.5. ==== Multivariate probability density from Multinomial Ecosystem State Model ====
+#' @title Calculate multivariate probability density from Multinomial Ecosystem State Model
+#'
+#' @description This function calculates multivariate probability density for an Multinomial Ecosystem State Model
+#'
+#' @param mod an object of class "mesm"
+#' @param samples scalar denoting number of samples along each predictor
+#'
+#' @return Returns Probability density (scaled to [0,1]) array.
+#'
+#' @author Adam Klimes
+#' @export
+#'
+probDensity.mesm <- function(mod, samples = 200){
+  predsNames <- names(mod$constants)[-(1:3)]
+  form <- as.formula(paste("resp ~", predsNames[1]))
+  predsRanges <- vapply(predsNames, function(x) range(mod$constants[[x]]), FUN.VALUE = rep(0, 2))
+  grads <- Map(seq, predsRanges[1,], predsRanges[2,], length.out = samples)
+  slices <- apply(expand.grid(grads[-1]), 1, function(x) slice.mesm(form, mod, value = grads[[1]], predValues = x, byChains = FALSE, doPlot = FALSE, samples = samples)[[1]])
+  # not finished
 }
