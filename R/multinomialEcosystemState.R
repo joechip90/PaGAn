@@ -882,6 +882,14 @@ fitMultinomialEcosystemState <- function(
 #'
 #' @param form formula, such as y ~ pred, specifying variables to be plotted
 #' @param mod an object of class "mesm"
+#' @param yaxis vector of values to be marked on y-axis
+#' @param transCol logical value indicating usage of transparent colours
+#' @param addWAIC logical value indication display of WAIC in upper right corner of the plot
+#' @param setCol vector of colours to be used for states
+#' @param drawXaxis logical value indicating whether values should be marked on x-axis
+#' @param SDmult scalar multiplying visualized standard deviation (to make lines for small standard deviation visible)
+#' @param byChain logical value indicating whether to plot states for each chain
+#' @param ... additional arguments passed to plot
 #'
 #' @return Returns invisibly a list containing posterior means of state value
 #' coefficients for each chain used in plotting.
@@ -891,7 +899,7 @@ fitMultinomialEcosystemState <- function(
 #'
 plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                      drawXaxis = TRUE, SDmult = 1, ...) {
+                      drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
   resp <- mod$data[[1]]
   dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
                                               length(resp)])
@@ -911,29 +919,31 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
   if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
-  auxLines <- function(chain, dat, mod){
-    nstates <- length(mod$initialValues$intercept_stateVal)
+  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  auxLines <- function(parsChain, dat, mod){
+    nstates <- mod$constants$numStates
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
     ind <- NULL
+    cNames <- rownames(parsChain)
     if (nstates > 1) {
       ind <- paste0("[", 1:nstates, "]")
-      probInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateProb", ind), drop = FALSE], na.rm = TRUE)
+      probInt <- parsChain[paste0("intercept_stateProb", ind), "mean"]
     }
-    cNames <- colnames(mod$mcmcSamples$samples[[chain]])
-    valInt <- cumsum(colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_stateVal", ind), drop = FALSE]))
-    precInt <- colMeans(mod$mcmcSamples$samples[[chain]][, paste0("intercept_statePrec", ind), drop = FALSE])
-    valCov <- if (paste0(svar, "_stateVal", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateVal", ind), drop = FALSE]) else rep(0, nstates)
-    precCov <- if (paste0(svar, "_statePrec", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_statePrec", ind), drop = FALSE]) else rep(0, nstates)
-    probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) colMeans(mod$mcmcSamples$samples[[chain]][, paste0(svar, "_stateProb", ind), drop = FALSE], na.rm = TRUE) else rep(0, nstates)
+    valInt <- parsChain[paste0("intercept_stateVal", ind), "mean"]
+    precInt <- parsChain[paste0("intercept_statePrec", ind), "mean"]
+    valCov <- if (paste0(svar, "_stateVal", ind[1]) %in% cNames) parsChain[paste0(svar, "_stateVal", ind), "mean"] else rep(0, nstates)
+    precCov <- if (paste0(svar, "_statePrec", ind[1]) %in% cNames) parsChain[paste0(svar, "_statePrec", ind), "mean"] else rep(0, nstates)
+    probCov <- if (paste0(svar, "_stateProb", ind[1]) %in% cNames) parsChain[paste0(svar, "_stateProb", ind), "mean"] else rep(0, nstates)
     if (nstates > 1) {
       probVals <- as.matrix(data.frame(Map(function(int, cov) exp(int + cov * xx), probInt, probCov)))
+      probVals[is.na(probVals)] <- 1
       probVals <- probVals / rowSums(probVals)
       probVals[is.nan(probVals)] <- 1
       }
     for (i in 1:nstates){
       cols <- setCol[i]
       if (nstates > 1) {
-        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = setCol[i], lty = chain, lwd = 3)
+        lines(xx, max(resp) + 0.1 * auxRange + probVals[, i] * 0.15 * auxRange, col = setCol[i], lwd = 3)
         if (transCol) {
           rgbVec <- col2rgb(cols)[, 1]
           cols <- rgb(rgbVec[1], rgbVec[2], rgbVec[3], alpha = 40 + probVals[, i] * 215, maxColorValue = 255)
@@ -941,39 +951,178 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       }
       sdVals <- 1 / sqrt(exp(precInt[i] + precCov[i] * xx))
       yEst <- do.call(invlink, list(valInt[i] + valCov[i] * xx))
-      segments(head(xx, -1), head(yEst, -1), x1 = tail(xx, -1), y1 = tail(yEst, -1), col = cols, lty = chain, lwd = 3)
+      segments(head(xx, -1), head(yEst, -1), x1 = tail(xx, -1), y1 = tail(yEst, -1), col = cols, lwd = 3)
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx + sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
     }
-    out <- cbind(valInt, valCov)
-    colnames(out) <- c("Intercept", svar)
-    rownames(out) <- paste0("stateVal_state", 1:nstates)
-    out
   }
-  out <- lapply(seq_along(mod$mcmcSamples$samples), auxLines, dat, mod)
-  out <- setNames(out, paste("chain", seq_along(mod$mcmcSamples$samples), sep = "_"))
-  invisible(out)
+  invisible(lapply(parsTab, auxLines, dat, mod))
 }
 
 ### 3.2. ==== Summary of Multinomial Ecosystem State Model ====
 #' @title Summarize Multinomial Ecosystem State Model
 #'
-#' @description This function ćalculates posterior quantiles of parameters of
-#' Multinomial Ecosystem State Model across all chains
+#' @description This function calculates posterior quantiles of parameters of
+#' Multinomial Ecosystem State Model across all chains or for each chain separately
 #'
 #' @param object an object of class "mesm"
-#' @param digit integer specifying the number of decimal places to be used
+#' @param byChains logical value indicating if the summary should be calculated for each chain separately
+#' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
+#' @param absInt logical value indicating if intercepts for state values should be absolute (by default, they represent differences)
 #'
 #' @return Returns data.frame of quantiles of posterior of parameters
 #'
 #' @author Adam Klimes
 #' @export
 #'
-summary.mesm <- function(object, digit = 4){
+summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
   varsSamples <- lapply(object$mcmcSamples$samples,
     function(x) x[, !grepl(paste0("^lifted|^linState|^", names(object$data)), colnames(x))])
-  allSamples <- do.call(rbind, varsSamples)
+  if (!byChains) varsSamples <- list(do.call(rbind, varsSamples))
+  sepInt <- function(samp){
+    scol <- grepl("intercept_stateVal", colnames(samp))
+    samp[, scol] <- t(apply(samp, 1, function(x, scol) cumsum(x[scol]), scol))
+    samp
+  }
+  if (absInt) varsSamples <- lapply(varsSamples, sepInt)
   auxSummary <- function(x)
     c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
-  round(t(apply(allSamples, 2, auxSummary)), digit)
+  out <- lapply(varsSamples, function(x) t(apply(x, 2, auxSummary)))
+  # if (length(out) == 1) out <- out[[1]]
+  if (!is.null(digit)) out <- lapply(out, round, digit)
+  out
+}
+
+### 3.3. ==== Plot slice from Multinomial Ecosystem State Model ====
+#' @title Plot slice from Multinomial Ecosystem State Model
+#'
+#' @description This function plots probability density for given predictor value
+#'
+#' @param form formula with one predictor specifying which variables to plot
+#' @param mod an object of class "mesm"
+#' @param value value of the preditor specified by \code{"form"} where the slice is done
+#' @param byChains logical value indicating if slice should be done for each chain separately
+#' @param xlab string used as label for x-axis
+#' @param doPlot logical value indicating if plotting should be done
+#' @param setCol vector of colours to be used for visualization of estimated states
+#' @param plotEst logical value indicating if estimated states should be visualized
+#' @param xaxis logical value indicating if values should be marked on x-axis
+#' @param addEcos logical value indicating if ecosystems within \code{"ecosTol"} from \code{"value"} should be visualized on the line
+#' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
+#'
+#' @return Returns list of plotted values
+#'
+#' @author Adam Klimes
+#' @export
+#'
+slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
+                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
+                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1){
+  resp <- mod$data[[1]]
+  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  svar <- labels(terms(form))
+  Nstates <- mod$constants$numStates
+  invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
+                    logit = function(x) exp(x)/(1+exp(x)))
+  xSample <- 1000
+  xx <- seq(min(resp), max(resp), length.out = xSample)
+  if (addEcos) {
+    pred <- mod$constants[[svar]]
+    xx <- c(xx, resp[abs(pred - value) < ecosTol])
+  }
+  plotSlice <- function(pars, value, mod){
+    getPars <- function(curState, pars, value){
+      auxExtract <- function(toGet, curState, pars, value){
+        pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"] + sum(pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"]) * value
+      }
+      est <- auxExtract("stateVal", curState, pars, value)
+      prec <- auxExtract("statePrec", curState, pars, value)
+      prob <- auxExtract("stateProb", curState, pars, value)
+      cbind(est = do.call(invlink, list(est)), sd = 1 / sqrt(exp(prec)), prob = prob)
+    }
+    parsVal <- vapply(1:Nstates, getPars, FUN.VALUE = array(0, dim = c(length(value), 3)), pars, value)
+    parsVal[, "prob", 1] <- rep(0, length(value))
+    parsVal[, "prob", ] <- exp(parsVal[, "prob", ]) / rowSums(exp(parsVal[, "prob", , drop = FALSE]))
+    rownames(parsVal) <- paste0("value", seq_along(value))
+    aux <- parsVal[, "est", ]
+    auxDim <- c(length(value), Nstates, 2)
+    parsD <- switch(as.character(mod$errorModel),
+                    gaussian = array(c(parsVal[, "est", ], parsVal[, "sd", ]), dim = auxDim),
+                    gamma = array(c(aux^2/parsVal[, "sd", ]^2, aux/parsVal[, "sd", ]^2), dim = auxDim),
+                    beta = array(c(aux*(aux*(1-aux)/parsVal[, "sd", ]^2-1), (aux*(1-aux)/parsVal[, "sd", ]^2-1)*(1-aux)), dim = auxDim))
+    dfun <- switch(as.character(mod$errorModel),
+                   gaussian = dnorm,
+                   gamma = dgamma,
+                   beta = dbeta)
+    dens <- apply(parsD, 1, apply, 1, function(pars) do.call(dfun, list(xx, pars[1], pars[2])), simplify = FALSE)
+    dens <- Map(function(den, prob) den * rep(prob, each = nrow(den)), dens, data.frame(t(matrix(parsVal[, "prob", ], nrow = length(value)))))
+    dens <- lapply(dens, rowSums)
+    densSt <- lapply(dens, function(x) x / max(x))
+    if (doPlot){
+      rgbVec <- col2rgb(setCol)
+      cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
+      lines(xx[1:xSample], densSt[[1]][1:xSample])
+      if (plotEst) abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
+      if (addEcos) points(tail(xx, -xSample), tail(densSt[[1]], -xSample), pch = 16)
+    }
+    densSt
+  }
+  if (doPlot){
+    plot(range(resp), c(1, 0), type = "n", ylab = "Potential energy", xlab = xlab, ylim = c(1, 0), axes = FALSE, yaxs = "i")
+    if (xaxis) axis(1)
+    axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
+    box(bty = "l")
+  }
+  out <- lapply(parsTab, plotSlice, value, mod)
+  invisible(c(out, list(resp = xx)))
+}
+
+### 3.4. ==== Probability landscape from Multinomial Ecosystem State Model ====
+#' @title Plot probability landscape from Multinomial Ecosystem State Model
+#'
+#' @description This function plots probability landscape for given predictor
+#'
+#' @param form formula with one predictor specifying which variables to plot
+#' @param mod an object of class "mesm"
+#' @param addPoints logical value indicating if ecosystems should be visualized
+#' @param addMinMax logical value indicating if stable states and tipping points should be visualized
+#' @param ... parameters passed to image()
+#'
+#' @return Returns Probability density (scaled to [0,1]) matrix.
+#'
+#' @author Adam Klimes
+#' @export
+#'
+plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
+  svar <- labels(terms(form))
+  resp <- mod$data[[1]]
+  pred <- mod$constants[[svar]]
+  grad <- seq(min(pred), max(pred), length.out = 500)
+  slices <- slice.mesm(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
+  mat <- do.call(cbind, slices[[1]])
+  image(t(mat), ...)
+  findMin <- function(x){
+    dfXin <- diff(x)
+    seqCount <- diff(c(0, which(dfXin != 0), length(x)))
+    Nflat <- rep(seqCount, seqCount) - 1
+    xClear <- x[c(TRUE,  dfXin != 0)]
+    dfX <- diff(xClear)
+    loc <- which(diff(sign(dfX)) == 2) + 1
+    if (dfX[1] > 0) loc <- c(1, loc)
+    if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+    inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
+    inLoc[inLoc %in% which(dfXin == 0)] <- 0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
+    inLoc
+  }
+  plotMinMax <- function(matCol, xCoors) {
+    yCoors <- seq(0, 1, length.out = nrow(mat))
+    mins <- findMin(matCol)
+    maxs <- findMin(-matCol)
+    points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
+    points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
+  }
+  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
+  stRange <- function(x) (x - min(x)) / max(x - min(x))
+  if (addPoints) points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
+  invisible(mat)
 }
