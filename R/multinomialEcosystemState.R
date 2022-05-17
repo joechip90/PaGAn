@@ -1106,19 +1106,6 @@ plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ..
   slices <- slice.mesm(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
   mat <- do.call(cbind, slices[[1]])
   image(t(mat), ...)
-  findMin <- function(x){
-    dfXin <- diff(x)
-    seqCount <- diff(c(0, which(dfXin != 0), length(x)))
-    Nflat <- rep(seqCount, seqCount) - 1
-    xClear <- x[c(TRUE,  dfXin != 0)]
-    dfX <- diff(xClear)
-    loc <- which(diff(sign(dfX)) == 2) + 1
-    if (dfX[1] > 0) loc <- c(1, loc)
-    if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
-    inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
-    inLoc[inLoc %in% which(dfXin == 0)] <- 0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
-    inLoc
-  }
   plotMinMax <- function(matCol, xCoors) {
     yCoors <- seq(0, 1, length.out = nrow(mat))
     mins <- findMin(matCol)
@@ -1131,3 +1118,59 @@ plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ..
   if (addPoints) points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
   invisible(mat)
 }
+
+### 3.5. ==== Predict ecosystem characteristics based on Multinomial Ecosystem State Model ====
+#' @title Predict from Multinomial Ecosystem State Model
+#'
+#' @description This function calculates probability curves for ecosystems based on Multinomial Ecosystem State Model
+#'
+#' @param mod an object of class "mesm"
+#' @param newdata dataframe of predictor values of ecosystems to be predicted.
+#'   If not provided, prediction is done for modelled data.
+#' @param samples number of samples to take along the respons variable
+#'
+#' @return Returns Probability density (scaled to [0,1]) for each ecosystem.
+#'
+#' @author Adam Klimes
+#' @export
+#'
+predict.mesm <- function(mod, newdata = NULL, samples = 1000){
+  if (is.null(newdata)) newdata <- as.data.frame(mod$constants[-(1:3)])
+  form <- formula(paste("~", colnames(newdata)[1]))
+  slices <- slice.mesm(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
+  probCurve <- as.data.frame(slices[[1]])
+  names(probCurve) <- paste0("obs", seq_along(probCurve))
+  resp <- slices$resp
+  out <- list(sampledResp = resp,
+              potentialEnergyCurves = potEn,
+              tippingPoints = lapply(probCurve, function(x, resp) resp[findMin(x)], resp),
+              stableStates = lapply(-probCurve, function(x, resp) resp[findMin(x)], resp))
+}
+
+### 3.6. ==== Find positions of local minima in a vector ====
+#' @title Find positions of local minima in a vector
+#'
+#' @description Finds position of all local minima in a vector including start
+#'   and end point. For flat minima (identical subsequent values), it denotes middle point
+#'
+#' @param x numeric vector
+#'
+#' @return Positions of minima in x
+#'
+#' @author Adam Klimes
+#'
+findMin <- function(x){
+  dfXin <- diff(x)
+  seqCount <- diff(c(0, which(dfXin != 0), length(x)))
+  Nflat <- rep(seqCount, seqCount) - 1
+  xClear <- x[c(TRUE,  dfXin != 0)]
+  dfX <- diff(xClear)
+  loc <- which(diff(sign(dfX)) == 2) + 1
+  if (dfX[1] > 0) loc <- c(1, loc)
+  if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+  inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
+  inLoc[inLoc %in% which(dfXin == 0)] <-
+    0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
+  inLoc
+}
+
