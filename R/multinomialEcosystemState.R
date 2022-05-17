@@ -1000,8 +1000,9 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #'
 #' @param form formula with one predictor specifying which variables to plot
 #' @param mod an object of class "mesm"
-#' @param value numeric vector of values of the preditor specified by \code{"form"} where the slice is done
-#' @param predValues named vector of values of other predictors
+#' @param value numeric vector of values of the preditor specified by
+#'   \code{"form"} where the slice is done or data.frame with values of predictors
+#'   in named columns
 #' @param byChains logical value indicating if slice should be done for each chain separately
 #' @param xlab string used as label for x-axis
 #' @param doPlot logical value indicating if plotting should be done
@@ -1017,7 +1018,7 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @author Adam Klimes
 #' @export
 #'
-slice.mesm <- function(form, mod, value = 0, predValues = NULL, byChains = TRUE, xlab = "", doPlot = TRUE,
+slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
                        setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                        plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1, samples = 1000){
   resp <- mod$data[[1]]
@@ -1031,23 +1032,25 @@ slice.mesm <- function(form, mod, value = 0, predValues = NULL, byChains = TRUE,
     pred <- mod$constants[[svar]]
     xx <- c(xx, resp[abs(pred - value) < ecosTol])
   }
-  plotSlice <- function(pars, value, mod, predValues){
-    getPars <- function(curState, pars, value, predValues){
-      auxExtract <- function(toGet, curState, pars, value, predValues){
-        out <- pars[which(rownames(pars) == paste0("intercept_", toGet, "[", curState, "]")), "mean"] + sum(pars[which(rownames(pars) == paste0(svar, "_", toGet, "[", curState, "]")), "mean"]) * value
-        out + sum(pars[which(rownames(pars) %in% paste0(names(predValues), "_", toGet, "[", curState, "]")), "mean"] * predValues)
+  if (is.null(dim(value))) value <- matrix(value, length(value), dimnames = list(NULL, svar))
+  value <- as.matrix(value)
+  plotSlice <- function(pars, value, mod){
+    getPars <- function(curState, pars, value){
+      auxExtract <- function(toGet, curState, pars, value){
+        pos <- match(paste0(c("intercept",colnames(value)), "_", toGet, "[", curState, "]"), rownames(pars))
+        pars[pos[1], "mean"] + as.vector(value %*% pars[pos[-1], "mean"])
       }
-      est <- auxExtract("stateVal", curState, pars, value, predValues)
-      prec <- auxExtract("statePrec", curState, pars, value, predValues)
-      prob <- auxExtract("stateProb", curState, pars, value, predValues)
+      est <- auxExtract("stateVal", curState, pars, value)
+      prec <- auxExtract("statePrec", curState, pars, value)
+      prob <- auxExtract("stateProb", curState, pars, value)
       cbind(est = do.call(invlink, list(est)), sd = 1 / sqrt(exp(prec)), prob = prob)
     }
-    parsVal <- vapply(1:Nstates, getPars, FUN.VALUE = array(0, dim = c(length(value), 3)), pars, value, predValues)
-    parsVal[, "prob", 1] <- rep(0, length(value))
+    parsVal <- vapply(1:Nstates, getPars, FUN.VALUE = array(0, dim = c(nrow(value), 3)), pars, value)
+    parsVal[, "prob", 1] <- rep(0, nrow(value))
     parsVal[, "prob", ] <- exp(parsVal[, "prob", ]) / rowSums(exp(parsVal[, "prob", , drop = FALSE]))
-    rownames(parsVal) <- paste0("value", seq_along(value))
+    rownames(parsVal) <- paste0("value", 1:nrow(value))
     aux <- parsVal[, "est", ]
-    auxDim <- c(length(value), Nstates, 2)
+    auxDim <- c(nrow(value), Nstates, 2)
     parsD <- switch(as.character(mod$errorModel),
                     gaussian = array(c(parsVal[, "est", ], parsVal[, "sd", ]), dim = auxDim),
                     gamma = array(c(aux^2/parsVal[, "sd", ]^2, aux/parsVal[, "sd", ]^2), dim = auxDim),
@@ -1057,7 +1060,7 @@ slice.mesm <- function(form, mod, value = 0, predValues = NULL, byChains = TRUE,
                    gamma = dgamma,
                    beta = dbeta)
     dens <- apply(parsD, 1, apply, 1, function(pars) do.call(dfun, list(xx, pars[1], pars[2])), simplify = FALSE)
-    dens <- Map(function(den, prob) den * rep(prob, each = nrow(den)), dens, data.frame(t(matrix(parsVal[, "prob", ], nrow = length(value)))))
+    dens <- Map(function(den, prob) den * rep(prob, each = nrow(den)), dens, data.frame(t(matrix(parsVal[, "prob", ], nrow = nrow(value)))))
     dens <- lapply(dens, rowSums)
     densSt <- lapply(dens, function(x) x / max(x))
     if (doPlot){
@@ -1075,7 +1078,7 @@ slice.mesm <- function(form, mod, value = 0, predValues = NULL, byChains = TRUE,
     axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
     box(bty = "l")
   }
-  out <- lapply(parsTab, plotSlice, value, mod, predValues)
+  out <- lapply(parsTab, plotSlice, value, mod)
   invisible(c(out, list(resp = xx)))
 }
 
@@ -1127,26 +1130,4 @@ plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ..
   stRange <- function(x) (x - min(x)) / max(x - min(x))
   if (addPoints) points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
   invisible(mat)
-}
-
-### 3.5. ==== Multivariate probability density from Multinomial Ecosystem State Model ====
-#' @title Calculate multivariate probability density from Multinomial Ecosystem State Model
-#'
-#' @description This function calculates multivariate probability density for an Multinomial Ecosystem State Model
-#'
-#' @param mod an object of class "mesm"
-#' @param samples scalar denoting number of samples along each predictor
-#'
-#' @return Returns Probability density (scaled to [0,1]) array.
-#'
-#' @author Adam Klimes
-#' @export
-#'
-probDensity.mesm <- function(mod, samples = 200){
-  predsNames <- names(mod$constants)[-(1:3)]
-  form <- as.formula(paste("resp ~", predsNames[1]))
-  predsRanges <- vapply(predsNames, function(x) range(mod$constants[[x]]), FUN.VALUE = rep(0, 2))
-  grads <- Map(seq, predsRanges[1,], predsRanges[2,], length.out = samples)
-  slices <- apply(expand.grid(grads[-1]), 1, function(x) slice.mesm(form, mod, value = grads[[1]], predValues = x, byChains = FALSE, doPlot = FALSE, samples = samples)[[1]])
-  # not finished
 }
