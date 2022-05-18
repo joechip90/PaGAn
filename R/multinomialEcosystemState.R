@@ -1208,6 +1208,7 @@ findMin <- function(x){
 #'
 #' @param resp A raster of response variable
 #' @param preds Named list of rasters used as predictors
+#' @param subsample A scalar denoting number of randomly sampled cells used for modelling. NULL for no subsampling
 #' @param numStates A scalar denoting number of distributions to fit in the mixture
 #' @param stateValError A description of the error distribution and link function to be used
 #' in the model describing the ecosystem state value.  This can be from the \link[stats]{family}
@@ -1225,10 +1226,10 @@ findMin <- function(x){
 #' @author Adam Klimes
 #' @export
 #'
-fitRasterMESM <- function(resp, preds, numStates = 4, stateValError = gaussian,
+fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateValError = gaussian,
                           transResp = function(x) x, mcmcChains = 2){
-  library(raster) #add to package libraries?
-  # check rasters - resolution, extent, projection
+  library(raster) # add to package libraries?
+  # rasters checking - resolution, extent, projection
   checkFun <- function(resp, preds, fun) {
     all(vapply(preds, function(x, ref) identical(fun(x), ref),
                fun(resp), FUN.VALUE = FALSE))
@@ -1236,7 +1237,48 @@ fitRasterMESM <- function(resp, preds, numStates = 4, stateValError = gaussian,
   if (!checkFun(resp, preds, res)) stop("Resolution of rasters has to be identical")
   if (!checkFun(resp, preds, extent)) stop("Extent of rasters has to be identical")
   if (!checkFun(resp, preds, projection)) stop("Projection of rasters has to be identical")
-  dat <- data.frame(resp = getValues(resp), lapply(preds, getValues))
+  # data preparation
+  dat <- data.frame(resp = transResp(getValues(resp)), lapply(preds, getValues))
+  selID <- which(!apply(is.na(dat), 1, any))
+  if (!is.null(subsample)) selID <- sample(selID, subsample)
+  datSel <- dat[selID, ]
+  st <- function(x, y = x) (x - mean(y)) / sd(y)
+  datSelSt <- data.frame(resp = datSel$resp, lapply(datSel[, -1], st))
+  # model preparation
+  form <- formula(paste("resp ~", paste(colnames(dat)[-1], collapse = " + ")))
+  predInit <- lapply(dat[, -1], function(x) rep(0.01, numStates))
+  setInit <- c(list(intercept_stateVal = c(0, rep(0.01, numStates - 1)),
+    intercept_statePrec = rep(2, numStates),
+    intercept_stateProb = c(0, rep(0.01, numStates - 1))),
+    predInit, predInit, predInit)
+  names(setInit)[-(1:3)] <- paste0(rep(colnames(dat)[-1], each = 3), c("_stateVal", "_statePrec", "_stateProb"))
+  # model fit
+  mod <- fitMultinomialEcosystemState(
+    stateValModels = form,
+    stateProbModels = form,
+    statePrecModels = form,
+    stateValError = stateValError,
+    inputData = datSelSt,
+    numStates = numStates,
+    mcmcChains = mcmcChains,
+    setInit = setInit,
+    setPriors = list(stateVal = list(int1 = "dnorm(0, 1)", pred = "dnorm(0, 10)"),
+                     statePrec = list(int = "dnorm(0, 1)", pred = "dnorm(0, 10)"))
+  )
+  # results inverse transformation
+  inverseSt.mesm <- function(mod, datOrig){
+    mod$constants[-(1:3)] <- datOrig[-1]
 
+    curState <- 1
+    pred <- names(mod$constants)[4]
+    paste0("intercept_state", c("Val", "Prec", "Prob"), "[", curState, "]")
+  }
+  modISt <- inverseSt.mesm(mod, datSel)
+str(datSel)
+str(mod$mcmcSamples$samples,1)
+colnames(mod$mcmcSamples$samples$chain1)
 
+  # raster reconstruction - to be used for model output
+  newRaster <- raster(matrix(dat$resp, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
+  out <- list(mod = mod, precariousness = newRaster)
 }
