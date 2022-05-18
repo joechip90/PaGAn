@@ -1198,3 +1198,45 @@ findMin <- function(x){
   inLoc
 }
 
+## 4. ------ DEFINE HELPER FUNCTIONS ------
+
+### 4.1. ==== Fit Multinomial Ecosystem State Model using rasters ====
+#' @title Fit Multinomial Ecosystem State Model using rasters
+#'
+#' @description Wrapper function to fit Multinomial Ecosystem State Model using
+#'raster layers and export results as rasters
+#'
+#' @param resp A raster of response variable
+#' @param preds Named list of rasters used as predictors
+#' @param numStates A scalar denoting number of distributions to fit in the mixture
+#' @param stateValError A description of the error distribution and link function to be used
+#' in the model describing the ecosystem state value.  This can be from the \link[stats]{family}
+#' specification or \code{character} scalar with the following possible values: \code{"gaussian"},
+#' \code{"gamma"}, \code{"beta"}, \code{"negbinomial"}, or \code{"betabinomial"}.
+#' @param transResp A function to be used for transformation of response variable
+#' @param mcmcChains An integer scalar giving the number of MCMC chains to use
+#'
+#' @return A list containing the following components:
+#' \itemize{
+#' \item{\code{}}{}
+#' \item{\code{}}{}
+#' }
+#'
+#' @author Adam Klimes
+#' @export
+#'
+fitRasterMESM <- function(resp, preds, numStates = 4, stateValError = gaussian,
+                          transResp = function(x) x, mcmcChains = 2){
+  library(raster) #add to package libraries?
+  # check rasters - resolution, extent, projection
+  checkFun <- function(resp, preds, fun) {
+    all(vapply(preds, function(x, ref) identical(fun(x), ref),
+               fun(resp), FUN.VALUE = FALSE))
+  }
+  if (!checkFun(resp, preds, res)) stop("Resolution of rasters has to be identical")
+  if (!checkFun(resp, preds, extent)) stop("Extent of rasters has to be identical")
+  if (!checkFun(resp, preds, projection)) stop("Projection of rasters has to be identical")
+  dat <- data.frame(resp = getValues(resp), lapply(preds, getValues))
+
+
+}
