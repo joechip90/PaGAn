@@ -1129,7 +1129,15 @@ plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ..
 #'   If not provided, prediction is done for modelled data.
 #' @param samples number of samples to take along the respons variable
 #'
-#' @return Returns Probability density (scaled to [0,1]) for each ecosystem.
+#' @return A list containing the following components:
+#' \itemize{
+#' \item{\code{sampledResp}}{A numeric vector of samples along response variable}
+#' \item{\code{probCurves}}{A data frame of probability curves for each observation}
+#' \item{\code{tipPoints}}{A list of tipping points for each observation. Border values are never included}
+#' \item{\code{stableStates}}{A list of stable states for each observation}
+#' \item{\code{obsDat}}{A data frame containing values of response variable,
+#' distance to closest tipping point and stable state for each observation}
+#' }
 #'
 #' @author Adam Klimes
 #' @export
@@ -1141,10 +1149,26 @@ predict.mesm <- function(mod, newdata = NULL, samples = 1000){
   probCurve <- as.data.frame(slices[[1]])
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
-  out <- list(sampledResp = resp,
-              potentialEnergyCurves = potEn,
-              tippingPoints = lapply(probCurve, function(x, resp) resp[findMin(x)], resp),
-              stableStates = lapply(-probCurve, function(x, resp) resp[findMin(x)], resp))
+  respVal <- mod$data[[1]]
+  getMin <- function(x, resp, extremes = TRUE) {
+    id <- findMin(x)
+    if (!extremes) id <- id[!id %in% c(1, length(x))]
+    out <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
+    if (length(out) == 0) out <- NA
+    out
+  }
+  tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
+  stableStates <- lapply(-probCurve, getMin, resp)
+  auxDist <- function(x, target) min(abs(x - target))
+  obsDat <- data.frame(
+    respVal = respVal,
+    distToTip = unlist(Map(auxDist, respVal, tipPoints)),
+    distToState = unlist(Map(auxDist, respVal, stableStates)))
+  list(sampledResp = resp,
+              probCurves = probCurve,
+              tipPoints = tipPoints,
+              stableStates = stableStates,
+              obsDat = obsDat)
 }
 
 ### 3.6. ==== Find positions of local minima in a vector ====
