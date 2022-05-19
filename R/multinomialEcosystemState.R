@@ -1064,10 +1064,12 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
     dens <- lapply(dens, rowSums)
     densSt <- lapply(dens, function(x) x / max(x))
     if (doPlot){
-      rgbVec <- col2rgb(setCol)
-      cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
       lines(xx[1:samples], densSt[[1]][1:samples])
-      if (plotEst) abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
+      if (plotEst) {
+        rgbVec <- col2rgb(setCol)
+        cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
+        abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
+      }
       if (addEcos) points(tail(xx, -samples), tail(densSt[[1]], -samples), pch = 16)
     }
     densSt
@@ -1244,10 +1246,10 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   datSel <- dat[selID, ]
   st <- function(x, y = x) (x - mean(y)) / sd(y)
   stinv <- function(x, y) x * sd(y) + mean(y)
-  datSelSt <- data.frame(resp = datSel$resp, lapply(datSel[, -1], st))
+  datSelSt <- data.frame(resp = datSel$resp, lapply(datSel[, -1, drop = FALSE], st))
   # model preparation
   form <- formula(paste("resp ~", paste(colnames(dat)[-1], collapse = " + ")))
-  predInit <- lapply(dat[, -1], function(x) rep(0.01, numStates))
+  predInit <- lapply(dat[, -1, drop = FALSE], function(x) rep(0.01, numStates))
   setInit <- c(list(intercept_stateVal = c(0, rep(0.01, numStates - 1)),
     intercept_statePrec = rep(2, numStates),
     intercept_stateProb = c(0, rep(0.01, numStates - 1))),
@@ -1275,29 +1277,36 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
     getSlope <- function(newSlope, xvar){
       (- newSlope * st(0, xvar)) / stinv(0, xvar)
     }
-    auxInvSt <- function(mod, datOrig, stateType, curState, chain) {
+    selState <- function(x, state) x[, grepl(paste0("\\[",state,"\\]$"), colnames(x)), drop = FALSE]
+    auxInvSt <- function(mod, datOrig, stateType, chain) {
+      Nstates <- mod$constants$numStates
       samp <- mod$mcmcSamples$samples[[chain]]
-      origInt <- apply(samp[, paste0(c("intercept", names(mod$constants)[-(1:3)]), "_state", stateType, "[", curState, "]")],
-        1, getInt, xvars = datOrig[, -1], st = st)
-      origSlopes <- Map(getSlope, data.frame(samp[, paste0(names(mod$constants)[-(1:3)], "_state", stateType, "[", curState, "]"), drop = FALSE]),
-                        xvar = datOrig[, -1])
-      mod$mcmcSamples$samples[[chain]][, paste0("intercept_state", stateType, "[", curState, "]")] <- origInt
-      mod$mcmcSamples$samples[[chain]][, paste0(names(mod$constants)[-(1:3)], "_state", stateType, "[", curState, "]")] <- as.matrix(data.frame(origSlopes))
+      ints <- samp[, paste0("intercept_state", stateType, "[", 1:Nstates, "]"), drop = FALSE]
+      if (stateType == "Val") ints <- t(apply(ints, 1, cumsum))
+      slopes <- samp[, paste0(rep(names(mod$constants)[-(1:3)], each = Nstates), "_state", stateType, "[", 1:Nstates, "]"), drop = FALSE]
+      origInt <- data.frame(lapply(1:Nstates, function(curState, ints, slopes) apply(cbind(selState(ints, curState), selState(slopes, curState)), 1, getInt, xvars = datOrig[, -1, drop = FALSE], st = st), ints, slopes))
+      if (stateType == "Val") origInt <- t(apply(origInt, 1, function(x) x - c(0, head(cumsum(x), -1))))
+      origSlopes <- Map(getSlope, data.frame(samp[, paste0(rep(names(mod$constants)[-(1:3)], each = Nstates), "_state", stateType, "[", 1:Nstates, "]"), drop = FALSE]),
+                        xvar = datOrig[, rep(2:ncol(datOrig), each = Nstates), drop = FALSE])
+      mod$mcmcSamples$samples[[chain]][, paste0("intercept_state", stateType, "[", 1:Nstates, "]")] <- as.matrix(origInt)
+      mod$mcmcSamples$samples[[chain]][, paste0(rep(names(mod$constants)[-(1:3)], each = Nstates), "_state", stateType, "[", 1:Nstates, "]")] <- as.matrix(data.frame(origSlopes))
       mod
     }
     for (chain in seq_along(mod$mcmcSamples$samples)){
-      for (curState in 1:mod$constants$numStates){
-        for (stateType in c("Val", "Prec", "Prob")){
-          mod <- auxInvSt(mod, datOrig, stateType, curState, chain)
-        }
+      for (stateType in c("Val", "Prec", "Prob")){
+        mod <- auxInvSt(mod, datOrig, stateType, chain)
       }
     }
     mod
   }
   modISt <- inverseSt.mesm(mod, datSel)
 
-  plot.mesm(resp ~ elev, mod, 0:5/5, cex = 0.4)
-  plot.mesm(resp ~ elev, modISt, 0:5/5, cex = 0.4)
+  plot.mesm(resp ~ elev, mod, 1:3)
+  plot.mesm(resp ~ elev, modISt, c(0.6, 0.7))
+  plotLandscape.mesm(resp ~ elev, mod)
+  plotLandscape.mesm(resp ~ elev, modISt)
+  aa <- predict.mesm(mod, newdata = datSelSt[,-1, drop = FALSE])
+  bb <- predict.mesm(modISt, newdata = datSel[,-1, drop = FALSE])
   # raster reconstruction - to be used for model output
   newRaster <- raster(matrix(dat$resp, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   out <- list(mod = mod, precariousness = newRaster)
