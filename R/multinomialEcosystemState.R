@@ -1243,6 +1243,7 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   if (!is.null(subsample)) selID <- sample(selID, subsample)
   datSel <- dat[selID, ]
   st <- function(x, y = x) (x - mean(y)) / sd(y)
+  stinv <- function(x, y) x * sd(y) + mean(y)
   datSelSt <- data.frame(resp = datSel$resp, lapply(datSel[, -1], st))
   # model preparation
   form <- formula(paste("resp ~", paste(colnames(dat)[-1], collapse = " + ")))
@@ -1268,16 +1269,35 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   # results inverse transformation
   inverseSt.mesm <- function(mod, datOrig){
     mod$constants[-(1:3)] <- datOrig[-1]
-
-    curState <- 1
-    pred <- names(mod$constants)[4]
-    paste0("intercept_state", c("Val", "Prec", "Prob"), "[", curState, "]")
+    getInt <- function(cf, xvars, st){
+      cf[1] + sum(cf[-1] * vapply(xvars, function(x) st(0, x), FUN.VALUE = 1.1))
+    }
+    getSlope <- function(newSlope, xvar){
+      (- newSlope * st(0, xvar)) / stinv(0, xvar)
+    }
+    auxInvSt <- function(mod, datOrig, stateType, curState, chain) {
+      samp <- mod$mcmcSamples$samples[[chain]]
+      origInt <- apply(samp[, paste0(c("intercept", names(mod$constants)[-(1:3)]), "_state", stateType, "[", curState, "]")],
+        1, getInt, xvars = datOrig[, -1], st = st)
+      origSlopes <- Map(getSlope, data.frame(samp[, paste0(names(mod$constants)[-(1:3)], "_state", stateType, "[", curState, "]"), drop = FALSE]),
+                        xvar = datOrig[, -1])
+      mod$mcmcSamples$samples[[chain]][, paste0("intercept_state", stateType, "[", curState, "]")] <- origInt
+      mod$mcmcSamples$samples[[chain]][, paste0(names(mod$constants)[-(1:3)], "_state", stateType, "[", curState, "]")] <- as.matrix(data.frame(origSlopes))
+      mod
+    }
+    for (chain in seq_along(mod$mcmcSamples$samples)){
+      for (curState in 1:mod$constants$numStates){
+        for (stateType in c("Val", "Prec", "Prob")){
+          mod <- auxInvSt(mod, datOrig, stateType, curState, chain)
+        }
+      }
+    }
+    mod
   }
   modISt <- inverseSt.mesm(mod, datSel)
-str(datSel)
-str(mod$mcmcSamples$samples,1)
-colnames(mod$mcmcSamples$samples$chain1)
 
+  plot.mesm(resp ~ elev, mod, 0:5/5, cex = 0.4)
+  plot.mesm(resp ~ elev, modISt, 0:5/5, cex = 0.4)
   # raster reconstruction - to be used for model output
   newRaster <- raster(matrix(dat$resp, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   out <- list(mod = mod, precariousness = newRaster)
