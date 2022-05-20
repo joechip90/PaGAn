@@ -1301,13 +1301,12 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   }
   modISt <- inverseSt.mesm(mod, datSel)
 
-  plot.mesm(resp ~ elev, mod, 1:3)
-  plot.mesm(resp ~ elev, modISt, c(0.6, 0.7))
-  plotLandscape.mesm(resp ~ elev, mod)
-  plotLandscape.mesm(resp ~ elev, modISt)
-  aa <- predict.mesm(mod, newdata = datSelSt[,-1, drop = FALSE])
-  bb <- predict.mesm(modISt, newdata = datSel[,-1, drop = FALSE])
   # raster reconstruction - to be used for model output
-  newRaster <- raster(matrix(dat$resp, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
-  out <- list(mod = mod, precariousness = newRaster)
+  distToState <- rep(NA, nrow(dat))
+  distToState[selID] <- predict.mesm(mod)$obsDat$distToState
+  precar <- rep(NA, nrow(dat))
+  precar[selID] <- predict.mesm(mod)$obsDat$distToTip
+  dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
+  precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
+  out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
 }
