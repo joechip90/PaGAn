@@ -1047,20 +1047,19 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
               obsDat = obsDat)
 }
 
-### 3.4. ==== Print Multinomial Ecosystem State Model ====
-#' @title Print Multinomial Ecosystem State Model
+### 3.4. ==== Extract Model Coefficients for Multinomial Ecosystem State Model ====
+#' @title Extract Model Coefficients for Multinomial Ecosystem State Model
 #'
-#' @description This function prints summary information about Multinomial Ecosystem State Model
+#' @description Posterior mean values from Multinomial Ecosystem State Model
 #'
-#' @param x an object of class "PaGAnmesm"
+#' @param object an object of class "PaGAnmesm"
 #'
-#' @return Invisibly returns x
+#' @return List of matrices of posterior mean values for each parameter
 #'
 #' @author Adam Klimes
 #' @export
 #'
-print.PaGAnmesm <- function(x){
-  WAIC <- x$mcmcSamples$WAIC
+coef.PaGAnmesm <- function(object){
   s <- summary(x, digit = 3)[[1]]
   getPars <- function(state, s){
     auxGetPars <- function(type, state, s) s[grep(paste0("_state", type, "\\[", state, "\\]$"), rownames(s)), "mean", drop = FALSE]
@@ -1074,16 +1073,33 @@ print.PaGAnmesm <- function(x){
   }
   res <- lapply(1:x$constants$numStates, getPars, s)
   names(res) <- paste0("State", 1:x$constants$numStates)
+  res
+}
+
+### 3.5. ==== Print Multinomial Ecosystem State Model ====
+#' @title Print Multinomial Ecosystem State Model
+#'
+#' @description This function prints summary information about Multinomial Ecosystem State Model
+#'
+#' @param x an object of class "PaGAnmesm"
+#'
+#' @return Invisibly returns x
+#'
+#' @author Adam Klimes
+#' @export
+#'
+print.PaGAnmesm <- function(x){
+  WAIC <- x$mcmcSamples$WAIC
   cat("Multinomial Ecosystem State Model\n")
   cat("WAIC:", WAIC$WAIC, "\n")
   cat("pWAIC:", WAIC$pWAIC, "\n")
   cat("Posterior mean values:\n")
-  print(res)
+  print(coef(x))
   if (WAIC$pWAIC > 0.4) cat("[Warning] There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.\n")
   invisible(x)
 }
 
-### 3.5. ==== Compactly Display the Structure of a Multinomial Ecosystem State Model ====
+### 3.6. ==== Compactly Display the Structure of a Multinomial Ecosystem State Model ====
 #' @title Compactly Display the Structure of a Multinomial Ecosystem State Model
 #'
 #' @description Compactly display the internal structure of a PaGAnmesm object
