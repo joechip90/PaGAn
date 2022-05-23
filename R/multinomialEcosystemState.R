@@ -1052,7 +1052,7 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
 #'
 #' @description This function prints summary information about Multinomial Ecosystem State Model
 #'
-#' @param x an object of class "mesm"
+#' @param x an object of class "PaGAnmesm"
 #'
 #' @return Invisibly returns x
 #'
@@ -1079,9 +1079,25 @@ print.PaGAnmesm <- function(x){
   cat("pWAIC:", WAIC$pWAIC, "\n")
   cat("Posterior mean values:\n")
   print(res)
-  # not done
   if (WAIC$pWAIC > 0.4) cat("[Warning] There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.\n")
   invisible(x)
+}
+
+### 3.5. ==== Compactly Display the Structure of a Multinomial Ecosystem State Model ====
+#' @title Compactly Display the Structure of a Multinomial Ecosystem State Model
+#'
+#' @description Compactly display the internal structure of a PaGAnmesm object
+#'
+#' @param object an object of class "PaGAnmesm"
+#'
+#' @return Invisibly returns NULL
+#'
+#' @author Adam Klimes
+#' @export
+#'
+str.PaGAnmesm <- function(object, max.level = 2, give.attr = FALSE, ...){
+  cat("List of", length(object), "\n")
+  NextMethod(str, object, max.level = max.level, give.attr = give.attr, ...)
 }
 
 ## 4. ------ DEFINE HELPER FUNCTIONS ------
