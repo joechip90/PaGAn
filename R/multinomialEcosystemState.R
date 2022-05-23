@@ -882,8 +882,8 @@ fitMultinomialEcosystemState <- function(
 #' @description This function plots results of multinomial ecosystem state model on the
 #' current graphical device.
 #'
+#' @param x an object of class "PaGAnmesm"
 #' @param form formula, such as y ~ pred, specifying variables to be plotted
-#' @param mod an object of class "mesm"
 #' @param yaxis vector of values to be marked on y-axis
 #' @param transCol logical value indicating usage of transparent colours
 #' @param addWAIC logical value indication display of WAIC in upper right corner of the plot
@@ -899,16 +899,16 @@ fitMultinomialEcosystemState <- function(
 #' @author Adam Klimes
 #' @export
 #'
-plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
+plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
-  resp <- mod$data[[1]]
-  dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
+  resp <- x$data[[1]]
+  dat <- data.frame(x$data, x$constants[sapply(x$constants, length) ==
                                               length(resp)])
   svar <- labels(terms(form))
   svar <- svar[svar %in% names(dat)]
   auxRange <- max(resp) - min(resp)
-  invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
+  invlink <- switch(as.character(x$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
   par(mai = c(0.8,0.8,0.1,0.1))
   plot(form, data = dat, ylim = c(min(resp) - 0.05 * auxRange, max(resp) + 0.3 * auxRange),
@@ -920,8 +920,8 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
-  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
-  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(x$mcmcSamples$WAIC$WAIC, 1)))
+  parsTab <- summary.mesm(x, byChains = byChains, absInt = TRUE, digit = NULL)
   auxLines <- function(parsChain, dat, mod){
     nstates <- mod$constants$numStates
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
@@ -958,7 +958,7 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
     }
   }
-  invisible(lapply(parsTab, auxLines, dat, mod))
+  invisible(lapply(parsTab, auxLines, dat, x))
 }
 
 ### 3.2. ==== Summary of Multinomial Ecosystem State Model ====
@@ -967,7 +967,7 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @description This function calculates posterior quantiles of parameters of
 #' Multinomial Ecosystem State Model across all chains or for each chain separately
 #'
-#' @param object an object of class "mesm"
+#' @param object an object of class "PaGAnmesm"
 #' @param byChains logical value indicating if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
 #' @param absInt logical value indicating if intercepts for state values should be absolute (by default, they represent differences)
@@ -1000,7 +1000,7 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #'
 #' @description This function calculates probability curves for ecosystems based on Multinomial Ecosystem State Model
 #'
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param newdata dataframe of predictor values of ecosystems to be predicted.
 #'   If not provided, prediction is done for modelled data.
 #' @param samples number of samples to take along the respons variable
@@ -1047,6 +1047,27 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
               obsDat = obsDat)
 }
 
+### 3.4. ==== Print Multinomial Ecosystem State Model ====
+#' @title Print Multinomial Ecosystem State Model
+#'
+#' @description This function prints summary information about Multinomial Ecosystem State Model
+#'
+#' @param x an object of class "mesm"
+#'
+#' @return Invisibly returns x
+#'
+#' @author Adam Klimes
+#' @export
+#'
+print.PaGAnmesm <- function(x){
+  cat("Multinomial Ecosystem State Model\n")
+  cat("WAIC:", x$mcmcSamples$WAIC$WAIC, "\n")
+  cat("pWAIC:", x$mcmcSamples$WAIC$pWAIC, "\n")
+  summary(x)
+  # not done
+  invisible(x)
+}
+
 ## 4. ------ DEFINE HELPER FUNCTIONS ------
 
 ### 4.1. ==== Find positions of local minima in a vector ====
@@ -1083,7 +1104,7 @@ findMin <- function(x){
 #' @description This function plots probability density for given predictor value
 #'
 #' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param value numeric vector of values of the preditor specified by
 #'   \code{"form"} where the slice is done or data.frame with values of predictors
 #'   in named columns
@@ -1174,7 +1195,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @description This function plots probability landscape for given predictor
 #'
 #' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param addPoints logical value indicating if ecosystems should be visualized
 #' @param addMinMax logical value indicating if stable states and tipping points should be visualized
 #' @param ... parameters passed to image()
