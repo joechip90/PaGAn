@@ -869,7 +869,9 @@ fitMultinomialEcosystemState <- function(
   # Run the MCMC
   mcmcOutput <- runMCMC(mcmcObjectCompiled$mcmcObject, niter = mcmcIters, nburnin = mcmcBurnin, thin = mcmcThin, nchains = mcmcChains, WAIC = TRUE, samplesAsCodaMCMC = TRUE)
   # Structure the compiled model, the MCMC samples, and the model specification into a list
-  append(list(mcmcSamples = mcmcOutput, compiledModel = mcmcObjectCompiled), modelSpecification)
+  out <- append(list(mcmcSamples = mcmcOutput, compiledModel = mcmcObjectCompiled), modelSpecification)
+  class(out) <- "PaGAnmesm"
+  out
 }
 
 ## 3. ------ DEFINE GENERAL MODEL METHODS ------
@@ -897,7 +899,7 @@ fitMultinomialEcosystemState <- function(
 #' @author Adam Klimes
 #' @export
 #'
-plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
+plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
   resp <- mod$data[[1]]
@@ -975,7 +977,7 @@ plot.mesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @author Adam Klimes
 #' @export
 #'
-summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
+summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
   varsSamples <- lapply(object$mcmcSamples$samples,
     function(x) x[, !grepl(paste0("^lifted|^linState|^", names(object$data)), colnames(x))])
   if (!byChains) varsSamples <- list(do.call(rbind, varsSamples))
@@ -993,7 +995,89 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
   out
 }
 
-### 3.3. ==== Plot slice from Multinomial Ecosystem State Model ====
+### 3.3. ==== Predict ecosystem characteristics based on Multinomial Ecosystem State Model ====
+#' @title Predict from Multinomial Ecosystem State Model
+#'
+#' @description This function calculates probability curves for ecosystems based on Multinomial Ecosystem State Model
+#'
+#' @param mod an object of class "mesm"
+#' @param newdata dataframe of predictor values of ecosystems to be predicted.
+#'   If not provided, prediction is done for modelled data.
+#' @param samples number of samples to take along the respons variable
+#'
+#' @return A list containing the following components:
+#' \itemize{
+#' \item{\code{sampledResp}}{A numeric vector of samples along response variable}
+#' \item{\code{probCurves}}{A data frame of probability curves for each observation}
+#' \item{\code{tipPoints}}{A list of tipping points for each observation. Border values are never included}
+#' \item{\code{stableStates}}{A list of stable states for each observation}
+#' \item{\code{obsDat}}{A data frame containing values of response variable,
+#' distance to closest tipping point and stable state for each observation}
+#' }
+#'
+#' @author Adam Klimes
+#' @export
+#'
+predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
+  if (is.null(newdata)) newdata <- as.data.frame(mod$constants[-(1:3)])
+  form <- formula(paste("~", colnames(newdata)[1]))
+  slices <- slice.mesm(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
+  probCurve <- as.data.frame(slices[[1]])
+  names(probCurve) <- paste0("obs", seq_along(probCurve))
+  resp <- slices$resp
+  respVal <- mod$data[[1]]
+  getMin <- function(x, resp, extremes = TRUE) {
+    id <- findMin(x)
+    if (!extremes) id <- id[!id %in% c(1, length(x))]
+    out <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
+    if (length(out) == 0) out <- NA
+    out
+  }
+  tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
+  stableStates <- lapply(-probCurve, getMin, resp)
+  auxDist <- function(x, target) min(abs(x - target))
+  obsDat <- data.frame(
+    respVal = respVal,
+    distToTip = unlist(Map(auxDist, respVal, tipPoints)),
+    distToState = unlist(Map(auxDist, respVal, stableStates)))
+  list(sampledResp = resp,
+              probCurves = probCurve,
+              tipPoints = tipPoints,
+              stableStates = stableStates,
+              obsDat = obsDat)
+}
+
+## 4. ------ DEFINE HELPER FUNCTIONS ------
+
+### 4.1. ==== Find positions of local minima in a vector ====
+#' @title Find positions of local minima in a vector
+#'
+#' @description Finds position of all local minima in a vector including start
+#'   and end point. For flat minima (identical subsequent values), it denotes middle point
+#'
+#' @param x numeric vector
+#'
+#' @return Positions of minima in x
+#'
+#' @author Adam Klimes
+#' @keywords internal
+#'
+findMin <- function(x){
+  dfXin <- diff(x)
+  seqCount <- diff(c(0, which(dfXin != 0), length(x)))
+  Nflat <- rep(seqCount, seqCount) - 1
+  xClear <- x[c(TRUE,  dfXin != 0)]
+  dfX <- diff(xClear)
+  loc <- which(diff(sign(dfX)) == 2) + 1
+  if (dfX[1] > 0) loc <- c(1, loc)
+  if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+  inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
+  inLoc[inLoc %in% which(dfXin == 0)] <-
+    0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
+  inLoc
+}
+
+### 4.2. ==== Plot slice from Multinomial Ecosystem State Model ====
 #' @title Plot slice from Multinomial Ecosystem State Model
 #'
 #' @description This function plots probability density for given predictor value
@@ -1018,7 +1102,7 @@ summary.mesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
 #' @author Adam Klimes
 #' @export
 #'
-slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
+sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
                        setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                        plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1, samples = 1000){
   resp <- mod$data[[1]]
@@ -1084,7 +1168,7 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
   invisible(c(out, list(resp = xx)))
 }
 
-### 3.4. ==== Probability landscape from Multinomial Ecosystem State Model ====
+### 4.3. ==== Probability landscape from Multinomial Ecosystem State Model ====
 #' @title Plot probability landscape from Multinomial Ecosystem State Model
 #'
 #' @description This function plots probability landscape for given predictor
@@ -1100,7 +1184,7 @@ slice.mesm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot 
 #' @author Adam Klimes
 #' @export
 #'
-plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
+landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
   svar <- labels(terms(form))
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
@@ -1121,88 +1205,7 @@ plotLandscape.mesm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ..
   invisible(mat)
 }
 
-### 3.5. ==== Predict ecosystem characteristics based on Multinomial Ecosystem State Model ====
-#' @title Predict from Multinomial Ecosystem State Model
-#'
-#' @description This function calculates probability curves for ecosystems based on Multinomial Ecosystem State Model
-#'
-#' @param mod an object of class "mesm"
-#' @param newdata dataframe of predictor values of ecosystems to be predicted.
-#'   If not provided, prediction is done for modelled data.
-#' @param samples number of samples to take along the respons variable
-#'
-#' @return A list containing the following components:
-#' \itemize{
-#' \item{\code{sampledResp}}{A numeric vector of samples along response variable}
-#' \item{\code{probCurves}}{A data frame of probability curves for each observation}
-#' \item{\code{tipPoints}}{A list of tipping points for each observation. Border values are never included}
-#' \item{\code{stableStates}}{A list of stable states for each observation}
-#' \item{\code{obsDat}}{A data frame containing values of response variable,
-#' distance to closest tipping point and stable state for each observation}
-#' }
-#'
-#' @author Adam Klimes
-#' @export
-#'
-predict.mesm <- function(mod, newdata = NULL, samples = 1000){
-  if (is.null(newdata)) newdata <- as.data.frame(mod$constants[-(1:3)])
-  form <- formula(paste("~", colnames(newdata)[1]))
-  slices <- slice.mesm(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
-  probCurve <- as.data.frame(slices[[1]])
-  names(probCurve) <- paste0("obs", seq_along(probCurve))
-  resp <- slices$resp
-  respVal <- mod$data[[1]]
-  getMin <- function(x, resp, extremes = TRUE) {
-    id <- findMin(x)
-    if (!extremes) id <- id[!id %in% c(1, length(x))]
-    out <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
-    if (length(out) == 0) out <- NA
-    out
-  }
-  tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
-  stableStates <- lapply(-probCurve, getMin, resp)
-  auxDist <- function(x, target) min(abs(x - target))
-  obsDat <- data.frame(
-    respVal = respVal,
-    distToTip = unlist(Map(auxDist, respVal, tipPoints)),
-    distToState = unlist(Map(auxDist, respVal, stableStates)))
-  list(sampledResp = resp,
-              probCurves = probCurve,
-              tipPoints = tipPoints,
-              stableStates = stableStates,
-              obsDat = obsDat)
-}
-
-### 3.6. ==== Find positions of local minima in a vector ====
-#' @title Find positions of local minima in a vector
-#'
-#' @description Finds position of all local minima in a vector including start
-#'   and end point. For flat minima (identical subsequent values), it denotes middle point
-#'
-#' @param x numeric vector
-#'
-#' @return Positions of minima in x
-#'
-#' @author Adam Klimes
-#'
-findMin <- function(x){
-  dfXin <- diff(x)
-  seqCount <- diff(c(0, which(dfXin != 0), length(x)))
-  Nflat <- rep(seqCount, seqCount) - 1
-  xClear <- x[c(TRUE,  dfXin != 0)]
-  dfX <- diff(xClear)
-  loc <- which(diff(sign(dfX)) == 2) + 1
-  if (dfX[1] > 0) loc <- c(1, loc)
-  if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
-  inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
-  inLoc[inLoc %in% which(dfXin == 0)] <-
-    0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
-  inLoc
-}
-
-## 4. ------ DEFINE HELPER FUNCTIONS ------
-
-### 4.1. ==== Fit Multinomial Ecosystem State Model using rasters ====
+### 4.4. ==== Fit Multinomial Ecosystem State Model using rasters ====
 #' @title Fit Multinomial Ecosystem State Model using rasters
 #'
 #' @description Wrapper function to fit Multinomial Ecosystem State Model using
