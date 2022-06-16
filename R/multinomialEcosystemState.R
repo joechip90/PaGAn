@@ -1002,6 +1002,7 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #'
 #' @param mod an object of class "PaGAnmesm"
 #' @param newdata dataframe of predictor values of ecosystems to be predicted.
+#'   If it contains column with response variable, obsDat is returned.
 #'   If not provided, prediction is done for modelled data.
 #' @param samples number of samples to take along the respons variable
 #'
@@ -1019,13 +1020,20 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #' @export
 #'
 predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
-  if (is.null(newdata)) newdata <- as.data.frame(mod$constants[-(1:3)])
+  respVal <- NULL
+  if (names(mod$data) %in% colnames(newdata)) {
+    respVal <- newdata[, names(mod$data)]
+    newdata <- newdata[, -which(colnames(newdata) == names(mod$data)), drop = FALSE]
+  }
+  if (is.null(newdata)) {
+    respVal <- mod$data[[1]]
+    newdata <- as.data.frame(mod$constants[-(1:3)])
+  }
   form <- formula(paste("~", colnames(newdata)[1]))
   slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
   probCurve <- as.data.frame(slices[[1]])
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
-  respVal <- mod$data[[1]]
   getMin <- function(x, resp, extremes = TRUE) {
     id <- findMin(x)
     if (!extremes) id <- id[!id %in% c(1, length(x))]
@@ -1036,10 +1044,13 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
   stableStates <- lapply(-probCurve, getMin, resp)
   auxDist <- function(x, target) min(abs(x - target))
-  obsDat <- data.frame(
-    respVal = respVal,
-    distToTip = unlist(Map(auxDist, respVal, tipPoints)),
-    distToState = unlist(Map(auxDist, respVal, stableStates)))
+  obsDat <- NULL
+  if (!is.null(respVal)){
+    obsDat <- data.frame(
+      respVal = respVal,
+      distToTip = unlist(Map(auxDist, respVal, tipPoints)),
+      distToState = unlist(Map(auxDist, respVal, stableStates)))
+  }
   list(sampledResp = resp,
               probCurves = probCurve,
               tipPoints = tipPoints,
@@ -1372,7 +1383,7 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
     }
     mod
   }
-  modISt <- inverseSt.mesm(mod, datSel)
+  # modISt <- inverseSt.mesm(mod, datSel)
 
   # raster reconstruction - to be used for model output
   distToState <- rep(NA, nrow(dat))
@@ -1381,5 +1392,5 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   precar[selID] <- predict(mod)$obsDat$distToTip
   dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
-  out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
+  out <- list(mod = mod, dToStateR = dToStateR, precarR = precarR)
 }
