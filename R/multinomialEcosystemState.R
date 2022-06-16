@@ -1302,6 +1302,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
 #' \code{"gamma"}, \code{"beta"}, \code{"negbinomial"}, or \code{"betabinomial"}.
 #' @param transResp A function to be used for transformation of response variable
 #' @param mcmcChains An integer scalar giving the number of MCMC chains to use
+#' @param predictFull logical value indicating if full sample should be used for prediction
 #'
 #' @return A list containing the following components:
 #' \itemize{
@@ -1313,7 +1314,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
 #' @export
 #'
 fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateValError = gaussian,
-                          transResp = function(x) x, mcmcChains = 2){
+                          transResp = function(x) x, mcmcChains = 2, predictFull = FALSE){
   library(raster) # add to package libraries?
   # rasters checking - resolution, extent, projection
   checkFun <- function(resp, preds, fun) {
@@ -1386,10 +1387,13 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   # modISt <- inverseSt.mesm(mod, datSel)
 
   # raster reconstruction - to be used for model output
+  newdata <- NULL
+  if (predictFull) newdata <- data.frame(resp = dat$resp, Map(st, dat[, -1, drop = FALSE], datSel[, -1, drop = FALSE]))
+  predictions <- predict(mod, newdata = newdata)$obsDat
   distToState <- rep(NA, nrow(dat))
-  distToState[selID] <- predict(mod)$obsDat$distToState
+  distToState[selID] <- predictions$distToState
   precar <- rep(NA, nrow(dat))
-  precar[selID] <- predict(mod)$obsDat$distToTip
+  precar[selID] <- predictions$distToTip
   dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   out <- list(mod = mod, dToStateR = dToStateR, precarR = precarR)
