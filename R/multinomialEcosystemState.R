@@ -882,8 +882,8 @@ fitMultinomialEcosystemState <- function(
 #' @description This function plots results of multinomial ecosystem state model on the
 #' current graphical device.
 #'
+#' @param x an object of class "PaGAnmesm"
 #' @param form formula, such as y ~ pred, specifying variables to be plotted
-#' @param mod an object of class "mesm"
 #' @param yaxis vector of values to be marked on y-axis
 #' @param transCol logical value indicating usage of transparent colours
 #' @param addWAIC logical value indication display of WAIC in upper right corner of the plot
@@ -899,16 +899,16 @@ fitMultinomialEcosystemState <- function(
 #' @author Adam Klimes
 #' @export
 #'
-plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
+plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
-  resp <- mod$data[[1]]
-  dat <- data.frame(mod$data, mod$constants[sapply(mod$constants, length) ==
+  resp <- x$data[[1]]
+  dat <- data.frame(x$data, x$constants[sapply(x$constants, length) ==
                                               length(resp)])
   svar <- labels(terms(form))
   svar <- svar[svar %in% names(dat)]
   auxRange <- max(resp) - min(resp)
-  invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
+  invlink <- switch(as.character(x$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
   par(mai = c(0.8,0.8,0.1,0.1))
   plot(form, data = dat, ylim = c(min(resp) - 0.05 * auxRange, max(resp) + 0.3 * auxRange),
@@ -920,8 +920,8 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
-  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
-  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(x$mcmcSamples$WAIC$WAIC, 1)))
+  parsTab <- summary(x, byChains = byChains, absInt = TRUE, digit = NULL)
   auxLines <- function(parsChain, dat, mod){
     nstates <- mod$constants$numStates
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
@@ -958,7 +958,7 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
       lines(xx, do.call(invlink, list(valInt[i] + valCov[i] * xx - sdVals * SDmult)), col = setCol[i], lty = 2, lwd = 1)
     }
   }
-  invisible(lapply(parsTab, auxLines, dat, mod))
+  invisible(lapply(parsTab, auxLines, dat, x))
 }
 
 ### 3.2. ==== Summary of Multinomial Ecosystem State Model ====
@@ -967,7 +967,7 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @description This function calculates posterior quantiles of parameters of
 #' Multinomial Ecosystem State Model across all chains or for each chain separately
 #'
-#' @param object an object of class "mesm"
+#' @param object an object of class "PaGAnmesm"
 #' @param byChains logical value indicating if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
 #' @param absInt logical value indicating if intercepts for state values should be absolute (by default, they represent differences)
@@ -1000,8 +1000,9 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #'
 #' @description This function calculates probability curves for ecosystems based on Multinomial Ecosystem State Model
 #'
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param newdata dataframe of predictor values of ecosystems to be predicted.
+#'   If it contains column with response variable, obsDat is returned.
 #'   If not provided, prediction is done for modelled data.
 #' @param samples number of samples to take along the respons variable
 #'
@@ -1019,13 +1020,20 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #' @export
 #'
 predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
-  if (is.null(newdata)) newdata <- as.data.frame(mod$constants[-(1:3)])
+  respVal <- NULL
+  if (names(mod$data) %in% colnames(newdata)) {
+    respVal <- newdata[, names(mod$data)]
+    newdata <- newdata[, -which(colnames(newdata) == names(mod$data)), drop = FALSE]
+  }
+  if (is.null(newdata)) {
+    respVal <- mod$data[[1]]
+    newdata <- as.data.frame(mod$constants[-(1:3)])
+  }
   form <- formula(paste("~", colnames(newdata)[1]))
-  slices <- slice.mesm(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
+  slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
   probCurve <- as.data.frame(slices[[1]])
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
-  respVal <- mod$data[[1]]
   getMin <- function(x, resp, extremes = TRUE) {
     id <- findMin(x)
     if (!extremes) id <- id[!id %in% c(1, length(x))]
@@ -1036,15 +1044,91 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
   stableStates <- lapply(-probCurve, getMin, resp)
   auxDist <- function(x, target) min(abs(x - target))
-  obsDat <- data.frame(
-    respVal = respVal,
-    distToTip = unlist(Map(auxDist, respVal, tipPoints)),
-    distToState = unlist(Map(auxDist, respVal, stableStates)))
+  obsDat <- NULL
+  if (!is.null(respVal)){
+    obsDat <- data.frame(
+      respVal = respVal,
+      distToTip = unlist(Map(auxDist, respVal, tipPoints)),
+      distToState = unlist(Map(auxDist, respVal, stableStates)))
+  }
   list(sampledResp = resp,
               probCurves = probCurve,
               tipPoints = tipPoints,
               stableStates = stableStates,
               obsDat = obsDat)
+}
+
+### 3.4. ==== Extract Model Coefficients for Multinomial Ecosystem State Model ====
+#' @title Extract Model Coefficients for Multinomial Ecosystem State Model
+#'
+#' @description Posterior mean values from Multinomial Ecosystem State Model
+#'
+#' @param object an object of class "PaGAnmesm"
+#'
+#' @return List of matrices of posterior mean values for each parameter
+#'
+#' @author Adam Klimes
+#' @export
+#'
+coef.PaGAnmesm <- function(object){
+  s <- summary(x, digit = 3)[[1]]
+  getPars <- function(state, s){
+    auxGetPars <- function(type, state, s) s[grep(paste0("_state", type, "\\[", state, "\\]$"), rownames(s)), "mean", drop = FALSE]
+    types <- c("Val", "Prec", "Prob")
+    out <- do.call(cbind, lapply(types, auxGetPars, state, s))
+    colnames(out) <- types
+    intID <- grep("^intercept", rownames(out))
+    out <- out[c(intID, (1:nrow(out))[-intID]), ]
+    rownames(out) <- vapply(strsplit(rownames(out), "_"), "[", 1, FUN.VALUE = "string")
+    out
+  }
+  res <- lapply(1:x$constants$numStates, getPars, s)
+  names(res) <- paste0("State", 1:x$constants$numStates)
+  res
+}
+
+### 3.5. ==== Print Multinomial Ecosystem State Model ====
+#' @title Print Multinomial Ecosystem State Model
+#'
+#' @description This function prints summary information about Multinomial Ecosystem State Model
+#'
+#' @param x an object of class "PaGAnmesm"
+#'
+#' @return Invisibly returns x
+#'
+#' @author Adam Klimes
+#' @export
+#'
+print.PaGAnmesm <- function(x){
+  WAIC <- x$mcmcSamples$WAIC
+  cat("Multinomial Ecosystem State Model\n")
+  cat("WAIC:", WAIC$WAIC, "\n")
+  cat("pWAIC:", WAIC$pWAIC, "\n")
+  cat("Posterior mean values:\n")
+  print(coef(x))
+  if (WAIC$pWAIC > 0.4) cat("[Warning] There are individual pWAIC values that are greater than 0.4. This may indicate that the WAIC estimate is unstable (Vehtari et al., 2017), at least in cases without grouping of data nodes or multivariate data nodes.\n")
+  # x$compiledModel$mcmcObject$getWAICdetails()
+  invisible(x)
+}
+
+### 3.6. ==== Compactly Display the Structure of a Multinomial Ecosystem State Model ====
+#' @title Compactly Display the Structure of a Multinomial Ecosystem State Model
+#'
+#' @description Compactly display the internal structure of a PaGAnmesm object
+#'
+#' @param object an object of class "PaGAnmesm"
+#' @param max.level integer giving maximal level of nesting of displayed structures
+#' @param give.attr logical indicating if attributes should be shown
+#' @param ... arguments passed to NextMethod
+#'
+#' @return Invisibly returns NULL
+#'
+#' @author Adam Klimes
+#' @export
+#'
+str.PaGAnmesm <- function(object, max.level = 2, give.attr = FALSE, ...){
+  cat("List of", length(object), "\n")
+  NextMethod(str, object, max.level = max.level, give.attr = give.attr, ...)
 }
 
 ## 4. ------ DEFINE HELPER FUNCTIONS ------
@@ -1083,7 +1167,7 @@ findMin <- function(x){
 #' @description This function plots probability density for given predictor value
 #'
 #' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param value numeric vector of values of the preditor specified by
 #'   \code{"form"} where the slice is done or data.frame with values of predictors
 #'   in named columns
@@ -1106,7 +1190,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
                        setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                        plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1, samples = 1000){
   resp <- mod$data[[1]]
-  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL)
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
@@ -1174,7 +1258,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @description This function plots probability landscape for given predictor
 #'
 #' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param addPoints logical value indicating if ecosystems should be visualized
 #' @param addMinMax logical value indicating if stable states and tipping points should be visualized
 #' @param ... parameters passed to image()
@@ -1189,7 +1273,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
   grad <- seq(min(pred), max(pred), length.out = 500)
-  slices <- slice.mesm(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
+  slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
   mat <- do.call(cbind, slices[[1]])
   image(t(mat), ...)
   plotMinMax <- function(matCol, xCoors) {
@@ -1221,6 +1305,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
 #' \code{"gamma"}, \code{"beta"}, \code{"negbinomial"}, or \code{"betabinomial"}.
 #' @param transResp A function to be used for transformation of response variable
 #' @param mcmcChains An integer scalar giving the number of MCMC chains to use
+#' @param predictFull logical value indicating if full sample should be used for prediction
 #'
 #' @return A list containing the following components:
 #' \itemize{
@@ -1232,7 +1317,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
 #' @export
 #'
 fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateValError = gaussian,
-                          transResp = function(x) x, mcmcChains = 2){
+                          transResp = function(x) x, mcmcChains = 2, predictFull = FALSE){
   library(raster) # add to package libraries?
   # rasters checking - resolution, extent, projection
   checkFun <- function(resp, preds, fun) {
@@ -1305,10 +1390,13 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   modISt <- inverseSt.mesm(mod, datSel)
 
   # raster reconstruction - to be used for model output
+  newdata <- NULL
+  if (predictFull) newdata <- data.frame(resp = dat$resp, Map(st, dat[, -1, drop = FALSE], datSel[, -1, drop = FALSE]))
+  predictions <- predict(mod, newdata = newdata)$obsDat
   distToState <- rep(NA, nrow(dat))
-  distToState[selID] <- predict.mesm(mod)$obsDat$distToState
+  distToState[selID] <- predictions$distToState
   precar <- rep(NA, nrow(dat))
-  precar[selID] <- predict.mesm(mod)$obsDat$distToTip
+  precar[selID] <- predictions$distToTip
   dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
