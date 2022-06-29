@@ -1117,6 +1117,9 @@ print.PaGAnmesm <- function(x){
 #' @description Compactly display the internal structure of a PaGAnmesm object
 #'
 #' @param object an object of class "PaGAnmesm"
+#' @param max.level integer giving maximal level of nesting of displayed structures
+#' @param give.attr logical indicating if attributes should be shown
+#' @param ... arguments passed to NextMethod
 #'
 #' @return Invisibly returns NULL
 #'
@@ -1384,7 +1387,7 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
     }
     mod
   }
-  # modISt <- inverseSt.mesm(mod, datSel)
+  modISt <- inverseSt.mesm(mod, datSel)
 
   # raster reconstruction - to be used for model output
   newdata <- NULL
@@ -1396,5 +1399,5 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   precar[selID] <- predictions$distToTip
   dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
-  out <- list(mod = mod, dToStateR = dToStateR, precarR = precarR)
+  out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
 }
