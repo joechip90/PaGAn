@@ -882,11 +882,7 @@ fitMultinomialEcosystemState <- function(
 #' @description This function plots results of multinomial ecosystem state model on the
 #' current graphical device.
 #'
-<<<<<<< HEAD
-#' @param mod an object of class "PaGAnmesm"
-=======
 #' @param x an object of class "PaGAnmesm"
->>>>>>> 5384bb7b7e1ccaa5f68f329caa76df4fea78801e
 #' @param form formula, such as y ~ pred, specifying variables to be plotted
 #' @param yaxis vector of values to be marked on y-axis
 #' @param transCol logical value indicating usage of transparent colours
@@ -903,11 +899,7 @@ fitMultinomialEcosystemState <- function(
 #' @author Adam Klimes
 #' @export
 #'
-<<<<<<< HEAD
-plot.PaGAnmesm <- function(mod, form, yaxis, transCol = TRUE, addWAIC = FALSE,
-=======
 plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
->>>>>>> 5384bb7b7e1ccaa5f68f329caa76df4fea78801e
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
   resp <- x$data[[1]]
@@ -928,13 +920,8 @@ plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
-<<<<<<< HEAD
-  if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
-  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL)
-=======
   if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(x$mcmcSamples$WAIC$WAIC, 1)))
   parsTab <- summary(x, byChains = byChains, absInt = TRUE, digit = NULL)
->>>>>>> 5384bb7b7e1ccaa5f68f329caa76df4fea78801e
   auxLines <- function(parsChain, dat, mod){
     nstates <- mod$constants$numStates
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
@@ -1407,15 +1394,9 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   if (predictFull) newdata <- data.frame(resp = dat$resp, Map(st, dat[, -1, drop = FALSE], datSel[, -1, drop = FALSE]))
   predictions <- predict(mod, newdata = newdata)$obsDat
   distToState <- rep(NA, nrow(dat))
-<<<<<<< HEAD
-  distToState[selID] <- predict(mod)$obsDat$distToState
-  precar <- rep(NA, nrow(dat))
-  precar[selID] <- predict(mod)$obsDat$distToTip
-=======
   distToState[selID] <- predictions$distToState
   precar <- rep(NA, nrow(dat))
   precar[selID] <- predictions$distToTip
->>>>>>> 5384bb7b7e1ccaa5f68f329caa76df4fea78801e
   dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
