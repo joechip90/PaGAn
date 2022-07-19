@@ -882,8 +882,8 @@ fitMultinomialEcosystemState <- function(
 #' @description This function plots results of multinomial ecosystem state model on the
 #' current graphical device.
 #'
+#' @param mod an object of class "PaGAnmesm"
 #' @param form formula, such as y ~ pred, specifying variables to be plotted
-#' @param mod an object of class "mesm"
 #' @param yaxis vector of values to be marked on y-axis
 #' @param transCol logical value indicating usage of transparent colours
 #' @param addWAIC logical value indication display of WAIC in upper right corner of the plot
@@ -899,7 +899,7 @@ fitMultinomialEcosystemState <- function(
 #' @author Adam Klimes
 #' @export
 #'
-plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
+plot.PaGAnmesm <- function(mod, form, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
   resp <- mod$data[[1]]
@@ -921,7 +921,7 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
   if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(mod$mcmcSamples$WAIC$WAIC, 1)))
-  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL)
   auxLines <- function(parsChain, dat, mod){
     nstates <- mod$constants$numStates
     xx <- seq(min(dat[, svar]), max(dat[, svar]), length.out = 100)
@@ -967,7 +967,7 @@ plot.PaGAnmesm <- function(form, mod, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @description This function calculates posterior quantiles of parameters of
 #' Multinomial Ecosystem State Model across all chains or for each chain separately
 #'
-#' @param object an object of class "mesm"
+#' @param object an object of class "PaGAnmesm"
 #' @param byChains logical value indicating if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
 #' @param absInt logical value indicating if intercepts for state values should be absolute (by default, they represent differences)
@@ -1000,7 +1000,7 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #'
 #' @description This function calculates probability curves for ecosystems based on Multinomial Ecosystem State Model
 #'
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param newdata dataframe of predictor values of ecosystems to be predicted.
 #'   If not provided, prediction is done for modelled data.
 #' @param samples number of samples to take along the respons variable
@@ -1021,7 +1021,7 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   if (is.null(newdata)) newdata <- as.data.frame(mod$constants[-(1:3)])
   form <- formula(paste("~", colnames(newdata)[1]))
-  slices <- slice.mesm(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
+  slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
   probCurve <- as.data.frame(slices[[1]])
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
@@ -1083,7 +1083,7 @@ findMin <- function(x){
 #' @description This function plots probability density for given predictor value
 #'
 #' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param value numeric vector of values of the preditor specified by
 #'   \code{"form"} where the slice is done or data.frame with values of predictors
 #'   in named columns
@@ -1106,7 +1106,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
                        setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                        plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1, samples = 1000){
   resp <- mod$data[[1]]
-  parsTab <- summary.mesm(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL)
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
@@ -1174,7 +1174,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @description This function plots probability landscape for given predictor
 #'
 #' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "mesm"
+#' @param mod an object of class "PaGAnmesm"
 #' @param addPoints logical value indicating if ecosystems should be visualized
 #' @param addMinMax logical value indicating if stable states and tipping points should be visualized
 #' @param ... parameters passed to image()
@@ -1189,7 +1189,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
   grad <- seq(min(pred), max(pred), length.out = 500)
-  slices <- slice.mesm(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
+  slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
   mat <- do.call(cbind, slices[[1]])
   image(t(mat), ...)
   plotMinMax <- function(matCol, xCoors) {
@@ -1306,9 +1306,9 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
 
   # raster reconstruction - to be used for model output
   distToState <- rep(NA, nrow(dat))
-  distToState[selID] <- predict.mesm(mod)$obsDat$distToState
+  distToState[selID] <- predict(mod)$obsDat$distToState
   precar <- rep(NA, nrow(dat))
-  precar[selID] <- predict.mesm(mod)$obsDat$distToTip
+  precar[selID] <- predict(mod)$obsDat$distToTip
   dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
