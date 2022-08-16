@@ -891,6 +891,8 @@ fitMultinomialEcosystemState <- function(
 #' @param drawXaxis logical value indicating whether values should be marked on x-axis
 #' @param SDmult scalar multiplying visualized standard deviation (to make lines for small standard deviation visible)
 #' @param byChain logical value indicating whether to plot states for each chain
+#' @param xlab a label for the x axis, defaults to predictor name.
+#' @param ylab a label for the x axis, defaults to "Response".
 #' @param ... additional arguments passed to plot
 #'
 #' @return Returns invisibly a list containing posterior means of state value
@@ -901,25 +903,31 @@ fitMultinomialEcosystemState <- function(
 #'
 plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                      drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
+                      drawXaxis = TRUE, SDmult = 1, byChains = TRUE, xlab = NULL, ylab = "Response", ...) {
   resp <- x$data[[1]]
   dat <- data.frame(x$data, x$constants[sapply(x$constants, length) ==
                                               length(resp)])
   svar <- labels(terms(form))
   svar <- svar[svar %in% names(dat)]
+  if (is.null(xlab)) xlab <- svar
   auxRange <- max(resp) - min(resp)
   invlink <- switch(as.character(x$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
   par(mai = c(0.8,0.8,0.1,0.1))
   plot(form, data = dat, ylim = c(min(resp) - 0.05 * auxRange, max(resp) + 0.3 * auxRange),
-       yaxs = "i", axes = FALSE, ...)
-  box(bty = "l")
+       yaxs = "i", axes = FALSE, ann = FALSE, ...)
+  usr <- par("usr")
+  axis(1, labels = c("", ""), at = c(2*usr[1]-usr[2], 2*usr[2]-usr[1]))
+  axis(2, labels = c("", ""), at = c(2*usr[3]-usr[4], max(resp) + 0.05 * auxRange), lwd.ticks = 0)
+  axis(1, labels = xlab, at = mean(usr), line = 2, tick = FALSE)
   if (drawXaxis) axis(1)
-  axis(2, labels = yaxis, at = yaxis)
-  axis(2, labels = 0:1, at = c(max(resp) + 0.1 * auxRange, max(resp) + 0.25 * auxRange))
+  axis(2, labels = yaxis, at = yaxis, las = 2)
+  axis(2, labels = 0:1, at = max(resp) + c(0.1, 0.25) * auxRange, las = 2)
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
+  axis(2, labels = "Probability", at = max(resp) + 0.175 * auxRange, line = 2, tick = FALSE)
+  axis(2, labels = ylab, at = mean(range(resp)), line = 2, tick = FALSE)
   if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(x$mcmcSamples$WAIC$WAIC, 1)))
   parsTab <- summary(x, byChains = byChains, absInt = TRUE, digit = NULL)
   auxLines <- function(parsChain, dat, mod){
