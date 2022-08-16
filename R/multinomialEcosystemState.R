@@ -1283,17 +1283,17 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
   grad <- seq(min(pred), max(pred), length.out = 500)
   slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
   mat <- do.call(cbind, slices[[1]])
-  image(t(mat), ...)
+  image(grad, slices$resp, t(mat), ...)
   plotMinMax <- function(matCol, xCoors) {
-    yCoors <- seq(0, 1, length.out = nrow(mat))
+    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = nrow(mat))
     mins <- findMin(matCol)
     maxs <- findMin(-matCol)
     points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
     points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
   }
-  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
+  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(min(pred), max(pred), length.out = ncol(mat)))
   stRange <- function(x) (x - min(x)) / max(x - min(x))
-  if (addPoints) points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
+  if (addPoints) points(pred, resp, cex = 0.4, pch = 16)
   invisible(mat)
 }
 
