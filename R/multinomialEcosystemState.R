@@ -1071,7 +1071,7 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
 #' @export
 #'
 coef.PaGAnmesm <- function(object){
-  s <- summary(x, digit = 3)[[1]]
+  s <- summary(object, digit = 3)[[1]]
   getPars <- function(state, s){
     auxGetPars <- function(type, state, s) s[grep(paste0("_state", type, "\\[", state, "\\]$"), rownames(s)), "mean", drop = FALSE]
     types <- c("Val", "Prec", "Prob")
@@ -1082,8 +1082,8 @@ coef.PaGAnmesm <- function(object){
     rownames(out) <- vapply(strsplit(rownames(out), "_"), "[", 1, FUN.VALUE = "string")
     out
   }
-  res <- lapply(1:x$constants$numStates, getPars, s)
-  names(res) <- paste0("State", 1:x$constants$numStates)
+  res <- lapply(1:object$constants$numStates, getPars, s)
+  names(res) <- paste0("State", 1:object$constants$numStates)
   res
 }
 
