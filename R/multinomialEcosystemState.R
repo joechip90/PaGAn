@@ -1043,8 +1043,7 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
   getMin <- function(x, resp, extremes = TRUE) {
-    id <- findMin(x)
-    if (!extremes) id <- id[!id %in% c(1, length(x))]
+    id <- findMin(x, extremes = extremes)
     out <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
     if (length(out) == 0) out <- NA
     out
@@ -1148,21 +1147,25 @@ str.PaGAnmesm <- function(object, max.level = 2, give.attr = FALSE, ...){
 #'   and end point. For flat minima (identical subsequent values), it denotes middle point
 #'
 #' @param x numeric vector
+#' @param extremes logical indicating if first and last values should be considered
+#'
 #'
 #' @return Positions of minima in x
 #'
 #' @author Adam Klimes
 #' @keywords internal
 #'
-findMin <- function(x){
+findMin <- function(x, extremes = TRUE){
   dfXin <- diff(x)
   seqCount <- diff(c(0, which(dfXin != 0), length(x)))
   Nflat <- rep(seqCount, seqCount) - 1
   xClear <- x[c(TRUE,  dfXin != 0)]
   dfX <- diff(xClear)
   loc <- which(diff(sign(dfX)) == 2) + 1
-  if (dfX[1] > 0) loc <- c(1, loc)
-  if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+  if (extremes){
+    if (dfX[1] > 0) loc <- c(1, loc)
+    if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+  }
   inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
   inLoc[inLoc %in% which(dfXin == 0)] <-
     0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
@@ -1287,7 +1290,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
   plotMinMax <- function(matCol, xCoors) {
     yCoors <- seq(min(slices$resp), max(slices$resp), length.out = nrow(mat))
     mins <- findMin(matCol)
-    maxs <- findMin(-matCol)
+    maxs <- findMin(-matCol, extremes = FALSE)
     points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
     points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
   }
