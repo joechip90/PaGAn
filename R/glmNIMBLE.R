@@ -123,14 +123,22 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
   if(!is.null(modelNodeDefinitions$inputData[[paste("offset", as.character(modelSuffix), sep = "")]])) {
     offsetVals <- as.double(modelNodeDefinitions$inputData[[paste("offset", as.character(modelSuffix), sep = "")]])
   }
+  sampledParams <- as.matrix(do.call(rbind, mcmcOutput$samples))
+  covMatrix <- as.matrix(as.data.frame(modelNodeDefinitions$inputData[
+    gsub("Coeff$", "", nonDataNodeNames[grepl("Coeff$", nonDataNodeNames, perl = TRUE) & !grepl("^intercept", nonDataNodeNames, perl = TRUE)], perl = TRUE)
+  ]))
+  if(ncol(covMatrix) <= 0 || nrow(covMatrix) <= 0) {
+    covMatrix <- matrix(NA, nrow = nrow(sampledParams), ncol = 0)
+  }
   # Simulate response values according to the sampled parameter values
-  simulatedValues <- apply(X = as.matrix(do.call(rbind, mcmcOutput$samples)), FUN = function(curRow, covMatrix, inFamily, inLink, inData, inOffset) {
+  simulatedValues <- apply(X = sampledParams, FUN = function(curRow, covMatrix, inFamily, inLink, inData, inOffset) {
     interceptCoeffVal <- 0.0
     if(any(grepl("^intercept.*Coeff$", names(curRow), perl = TRUE))) {
       interceptCoeffVal <- curRow[grepl("^intercept.*Coeff$", names(curRow), perl = TRUE)]
     }
-    meanPredVals <- 0.0
-    if(nrow(covMatrix) > 0 && ncol(covMatrix) > 0) {
+    if(ncol(covMatrix) <= 0) {
+      meanPredVals <- rep(0.0, nrow(covMatrix))
+    } else {
       meanPredVals <- covMatrix %*% curRow[paste(colnames(covMatrix), "Coeff", sep = "")]
     }
     # Calculate the mean prediction values
@@ -147,9 +155,7 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
       negbinomial = curRow[grepl("Scale$", names(curRow), perl = TRUE)])
     # Sample from the relevant distribution
     simulateFromErrorFamily(meanPredVals, scaleValues, inFamily)
-  }, covMatrix = as.matrix(as.data.frame(modelNodeDefinitions$inputData[
-    gsub("Coeff$", "", nonDataNodeNames[grepl("Coeff$", nonDataNodeNames, perl = TRUE) & !grepl("^intercept", nonDataNodeNames, perl = TRUE)], perl = TRUE)
-  ])), inFamily = as.character(modelNodeDefinitions$family), inLink = as.character(modelNodeDefinitions$link),
+  }, covMatrix = covMatrix, inFamily = as.character(modelNodeDefinitions$family), inLink = as.character(modelNodeDefinitions$link),
     inData = modelNodeDefinitions$inputData, inOffset = offsetVals, MARGIN = 1)
   # Calculate the fitted median response
   fittedPred <- mcmcOutput$summary$all.chains[grepl("^meanPred", rownames(mcmcOutput$summary$all.chains), perl = TRUE), "Median"] * numTrials
