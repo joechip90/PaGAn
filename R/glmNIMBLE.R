@@ -129,7 +129,7 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
     if(any(grepl("^intercept.*Coeff$", names(curRow), perl = TRUE))) {
       interceptCoeffVal <- curRow[grepl("^intercept.*Coeff$", names(curRow), perl = TRUE)]
     }
-    meanPredVals <- rep(0.0, nrow(inData))
+    meanPredVals <- 0.0
     if(nrow(covMatrix) > 0 && ncol(covMatrix) > 0) {
       meanPredVals <- covMatrix %*% curRow[paste(colnames(covMatrix), "Coeff", sep = "")]
     }
