@@ -128,7 +128,7 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
     gsub("Coeff$", "", nonDataNodeNames[grepl("Coeff$", nonDataNodeNames, perl = TRUE) & !grepl("^intercept", nonDataNodeNames, perl = TRUE)], perl = TRUE)
   ]))
   if(ncol(covMatrix) <= 0 || nrow(covMatrix) <= 0) {
-    covMatrix <- matrix(NA, nrow = nrow(sampledParams), ncol = 0)
+    covMatrix <- matrix(NA, nrow = nrow(modelNodeDefinitions$inputData), ncol = 0)
   }
   # Simulate response values according to the sampled parameter values
   simulatedValues <- apply(X = sampledParams, FUN = function(curRow, covMatrix, inFamily, inLink, inData, inOffset) {
