@@ -59,7 +59,7 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     # Compile the MCMC object
     compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
     # Run the MCMC
-    mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCList$numRuns, nburnin = inMCMCList$numBurnIn, nchains = inMCMCList$numChains, thin = inMCMCList$thinDensity, thin2 = inMCMCList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = inWAIC, summary = TRUE)
+    mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCList$numRuns + inMCMCList$numBurnIn, nburnin = inMCMCList$numBurnIn, nchains = inMCMCList$numChains, thin = inMCMCList$thinDensity, thin2 = inMCMCList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = inWAIC, summary = TRUE)
   } else {
     # Create a function to run across multiple cores
     parallelRun <- function(procNum, modelCode, data, constants, paramNodeNames, predictionNodeNames, inits, mcmcList, WAIC, tempFiles, chainVec, seedVec) {
@@ -84,7 +84,7 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
         compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
         # Run the MCMC
         cat("Running MCMC...\n")
-        mcmcOutput <- runMCMC(compiledMCMC, niter = mcmcList$numRuns, nburnin = mcmcList$numBurnIn, nchains = chainVec[procNum], thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = FALSE, summary = TRUE, setSeed = seedVec[procNum])
+        mcmcOutput <- runMCMC(compiledMCMC, niter = mcmcList$numRuns + mcmcList$numBurnIn, nburnin = mcmcList$numBurnIn, nchains = chainVec[procNum], thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = FALSE, summary = TRUE, setSeed = seedVec[procNum])
         # Print the process complete text
         cat(processCompleteTxt, "\n", sep = "")
         # Create an output object
@@ -224,7 +224,7 @@ sanityCheckMCMCParameters <- function(inputList) {
   mcmcList$numBurnIn <- tryCatch(as.integer(mcmcList$numBurnIn)[1], error = function(err) {
     stop("error encountered during processing of MCMC control parameter (numBurnIn): ", err)
   })
-  if(is.na(mcmcList$numBurnIn) || mcmcList$numBurnIn <= 0) {
+  if(is.na(mcmcList$numBurnIn) || mcmcList$numBurnIn < 0) {
     stop("error encountered during processing of MCMC control parameter (numBurnIn): must be an integer value greater than zero")
   }
   # Check to ensure the thinning parameter is present and correct

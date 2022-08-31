@@ -129,9 +129,13 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
     if(any(grepl("^intercept.*Coeff$", names(curRow), perl = TRUE))) {
       interceptCoeffVal <- curRow[grepl("^intercept.*Coeff$", names(curRow), perl = TRUE)]
     }
+    meanPredVals <- rep(0.0, nrow(inData))
+    if(nrow(covMatrix) > 0 && ncol(covMatrix) > 0) {
+      meanPredVals <- covMatrix %*% curRow[paste(colnames(covMatrix), "Coeff", sep = "")]
+    }
     # Calculate the mean prediction values
     meanPredVals <- applyInverseLink(
-      as.double(covMatrix %*% curRow[paste(colnames(covMatrix), "Coeff", sep = "")] + interceptCoeffVal) + inOffset,
+      as.double(meanPredVals + interceptCoeffVal) + inOffset,
       inLink)
     # Retrieve the relevant scale parameter for the error distribution
     scaleValues <- switch(inFamily,
