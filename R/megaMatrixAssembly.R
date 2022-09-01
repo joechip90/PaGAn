@@ -1,12 +1,12 @@
 
 
-megaMatrixAssembly <- function(strMatrix, ipmKernels, states, kernelFrom, kernelTo){
+megaMatrixAssembly <- function(stgMatrix, ipmKernels, states, kernelFrom, kernelTo){
 
   ## Check correct dimensions / states
-  if(dim(strMatrix)[1] != dim(strMatrix)[2]){
+  if(dim(stgMatrix)[1] != dim(stgMatrix)[2]){
     stop("strMatrix is not a square matrix.")
   }
-  if(dim(strMatrix)[1] != length(states)){
+  if(dim(stgMatrix)[1] != length(states)){
     stop("matrix dimensions and number of states do not match.")
   }
 
@@ -53,27 +53,30 @@ megaMatrixAssembly <- function(strMatrix, ipmKernels, states, kernelFrom, kernel
       megaMat.sam[megaRows,megaCols,i] <- ipmKernels[[k]]$samples[,,i]
     }
   }
-  # TODO: Fix the indexing. The kernels are probably ending up in the wrong positions in the mega matrix.
-  # (or it might all be the fault og image() confusing the hell out of me.)
+  # TODO: Check the indexing. The kernels may be ending up in the wrong position in the megamatrix.
+  # (or it might all be the fault of image() confusing the hell out of me.)
 
   ## Assemble sample matrices and average matrix in a list and return
   megaMat <- list(samples = megaMat.sam,
-                  expected = apply(megaMat.sam, 3, mean)) # TODO: Check whether to use mean or median
+                  expected =   apply(X = megaMat.sam, FUN = mean, MARGIN = c(1, 2)))
 
   return(megaMat)
 }
 
 ## Example
-strMatrix <- matrix(c(0, 1,
+stgMatrix <- matrix(c(0, 1,
                       1, 1),
                       nrow = 2, ncol = 2, byrow = TRUE)
 
-ipmKernels <- list(growthSurvMat, growthSurvMat, recMat)
+ipmKernels <- list(growthSurvMat, growthSurvMat, recMat) # NOTE: Uses kernels from vignette example
 states <- c('Juvenile', 'Adult')
 kernelFrom <- c('Juvenile', 'Adult', 'Adult')
 kernelTo <- c('Adult', 'Adult', 'Juvenile')
+#states <- c(1, 2)
+#kernelFrom <- c(1, 2, 2)
+#kernelTo <- c(2, 2, 1)
 
+test <- megaMatrixAssembly(stgMatrix, ipmKernels, states, kernelFrom, kernelTo)
+image(t(test$samples[,,1]))
+image(t(test$expected))
 
-states <- c(1, 2)
-kernelFrom <- c(1, 2, 2)
-kernelTo <- c(2, 2, 1)
