@@ -1212,6 +1212,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
                       samples = 1000, randomSample = NULL){
   resp <- mod$data[[1]]
   parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL, randomSample = randomSample)
+  if (is.null(randomSample)) parsTab <- lapply(parsTab, function(x) x[, "mean", drop = FALSE])
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
@@ -1270,9 +1271,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
     axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
     box(bty = "l")
   }
-  out <- if (is.null(randomSample))
-    lapply(parsTab, plotSlice, value, mod) else
-      lapply(parsTab, apply, 2, plotSlice, value, mod)
+  out <- lapply(parsTab, apply, 2, plotSlice, value, mod, simplify = FALSE)
   invisible(c(out, list(resp = xx)))
 }
 
@@ -1285,6 +1284,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @param mod an object of class "PaGAnmesm"
 #' @param addPoints logical value indicating if ecosystems should be visualized
 #' @param addMinMax logical value indicating if stable states and tipping points should be visualized
+#' @param uncertainty logical value indicating if uncertainty of the landscape should be plotted instead
 #' @param ... parameters passed to image()
 #'
 #' @return Returns Probability density (scaled to [0,1]) matrix.
@@ -1292,23 +1292,29 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @author Adam Klimes
 #' @export
 #'
-landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
+landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, uncertainty = FALSE, ...){
   svar <- labels(terms(form))
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
   grad <- seq(min(pred), max(pred), length.out = 500)
-  slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
-  mat <- do.call(cbind, slices[[1]])
-  image(grad, slices$resp, t(mat), ...)
-  plotMinMax <- function(matCol, xCoors) {
-    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = nrow(mat))
-    mins <- findMin(matCol)
-    maxs <- findMin(-matCol, extremes = FALSE)
-    points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
-    points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
+  randomSample <- if (uncertainty) 50 else NULL
+  slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE, randomSample = randomSample)
+  mat <- lapply(slices[[1]], function(x) do.call(cbind, x))
+  mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
+  matPlot <- if (uncertainty) apply(mats, 2, apply, 1, sd) else mat[[1]]
+  image(grad, slices$resp, t(matPlot), ...)
+  plotMinMax <- function(vals, xCoors, col) {
+    points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = 0.5, col = col)
   }
-  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(min(pred), max(pred), length.out = ncol(mat)))
-  stRange <- function(x) (x - min(x)) / max(x - min(x))
+  if (addMinMax) {
+    maxs <- apply(mats, 3, apply, 2, findMin, extremes = FALSE, simplify = FALSE)
+    mins <- apply(mats, 3, apply, 2, function(x) findMin(-x), simplify = FALSE)
+    if (!uncertainty) {
+      yCoors <- seq(min(slices$resp), max(slices$resp), length.out = length(slices$resp))
+      Map(plotMinMax, maxs[[1]], grad, col = "red")
+      Map(plotMinMax, mins[[1]], grad, col = "blue")
+    }
+  }
   if (addPoints) points(pred, resp, cex = 0.4, pch = 16)
   invisible(mat)
 }
