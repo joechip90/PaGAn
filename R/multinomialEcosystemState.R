@@ -891,6 +891,8 @@ fitMultinomialEcosystemState <- function(
 #' @param drawXaxis logical value indicating whether values should be marked on x-axis
 #' @param SDmult scalar multiplying visualized standard deviation (to make lines for small standard deviation visible)
 #' @param byChain logical value indicating whether to plot states for each chain
+#' @param xlab a label for the x axis, defaults to predictor name.
+#' @param ylab a label for the x axis, defaults to "Response".
 #' @param ... additional arguments passed to plot
 #'
 #' @return Returns invisibly a list containing posterior means of state value
@@ -901,25 +903,31 @@ fitMultinomialEcosystemState <- function(
 #'
 plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                      drawXaxis = TRUE, SDmult = 1, byChains = TRUE, ...) {
+                      drawXaxis = TRUE, SDmult = 1, byChains = TRUE, xlab = NULL, ylab = "Response", ...) {
   resp <- x$data[[1]]
   dat <- data.frame(x$data, x$constants[sapply(x$constants, length) ==
                                               length(resp)])
   svar <- labels(terms(form))
   svar <- svar[svar %in% names(dat)]
+  if (is.null(xlab)) xlab <- svar
   auxRange <- max(resp) - min(resp)
   invlink <- switch(as.character(x$linkFunction), identity = function(x) x, log = exp,
                     logit = function(x) exp(x)/(1+exp(x)))
   par(mai = c(0.8,0.8,0.1,0.1))
   plot(form, data = dat, ylim = c(min(resp) - 0.05 * auxRange, max(resp) + 0.3 * auxRange),
-       yaxs = "i", axes = FALSE, ...)
-  box(bty = "l")
+       yaxs = "i", axes = FALSE, ann = FALSE, ...)
+  usr <- par("usr")
+  axis(1, labels = c("", ""), at = c(2*usr[1]-usr[2], 2*usr[2]-usr[1]))
+  axis(2, labels = c("", ""), at = c(2*usr[3]-usr[4], max(resp) + 0.05 * auxRange), lwd.ticks = 0)
+  axis(1, labels = xlab, at = mean(usr), line = 2, tick = FALSE)
   if (drawXaxis) axis(1)
-  axis(2, labels = yaxis, at = yaxis)
-  axis(2, labels = 0:1, at = c(max(resp) + 0.1 * auxRange, max(resp) + 0.25 * auxRange))
+  axis(2, labels = yaxis, at = yaxis, las = 2)
+  axis(2, labels = 0:1, at = max(resp) + c(0.1, 0.25) * auxRange, las = 2)
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
   abline(h = max(resp) + 0.25 * auxRange, lty = 2)
+  axis(2, labels = "Probability", at = max(resp) + 0.175 * auxRange, line = 2, tick = FALSE)
+  axis(2, labels = ylab, at = mean(range(resp)), line = 2, tick = FALSE)
   if (addWAIC) text(par("usr")[2] - (par("usr")[2] - par("usr")[1]) * 0.2, max(resp) + 0.175 * auxRange, paste("WAIC:", round(x$mcmcSamples$WAIC$WAIC, 1)))
   parsTab <- summary(x, byChains = byChains, absInt = TRUE, digit = NULL)
   auxLines <- function(parsChain, dat, mod){
@@ -1035,8 +1043,7 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
   getMin <- function(x, resp, extremes = TRUE) {
-    id <- findMin(x)
-    if (!extremes) id <- id[!id %in% c(1, length(x))]
+    id <- findMin(x, extremes = extremes)
     out <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
     if (length(out) == 0) out <- NA
     out
@@ -1140,21 +1147,25 @@ str.PaGAnmesm <- function(object, max.level = 2, give.attr = FALSE, ...){
 #'   and end point. For flat minima (identical subsequent values), it denotes middle point
 #'
 #' @param x numeric vector
+#' @param extremes logical indicating if first and last values should be considered
+#'
 #'
 #' @return Positions of minima in x
 #'
 #' @author Adam Klimes
 #' @keywords internal
 #'
-findMin <- function(x){
+findMin <- function(x, extremes = TRUE){
   dfXin <- diff(x)
   seqCount <- diff(c(0, which(dfXin != 0), length(x)))
   Nflat <- rep(seqCount, seqCount) - 1
   xClear <- x[c(TRUE,  dfXin != 0)]
   dfX <- diff(xClear)
   loc <- which(diff(sign(dfX)) == 2) + 1
-  if (dfX[1] > 0) loc <- c(1, loc)
-  if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+  if (extremes){
+    if (dfX[1] > 0) loc <- c(1, loc)
+    if (tail(dfX, 1) < 0) loc <- c(loc, length(xClear))
+  }
   inLoc <- seq_along(x)[c(TRUE, dfXin != 0)][loc]
   inLoc[inLoc %in% which(dfXin == 0)] <-
     0.5 * Nflat[inLoc[inLoc %in% which(dfXin == 0)]] + inLoc[inLoc %in% which(dfXin == 0)]
@@ -1275,17 +1286,17 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
   grad <- seq(min(pred), max(pred), length.out = 500)
   slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
   mat <- do.call(cbind, slices[[1]])
-  image(t(mat), ...)
+  image(grad, slices$resp, t(mat), ...)
   plotMinMax <- function(matCol, xCoors) {
-    yCoors <- seq(0, 1, length.out = nrow(mat))
+    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = nrow(mat))
     mins <- findMin(matCol)
-    maxs <- findMin(-matCol)
+    maxs <- findMin(-matCol, extremes = FALSE)
     points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
     points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
   }
-  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(0, 1, length.out = ncol(mat)))
+  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(min(pred), max(pred), length.out = ncol(mat)))
   stRange <- function(x) (x - min(x)) / max(x - min(x))
-  if (addPoints) points(stRange(pred), stRange(resp), cex = 0.4, pch = 16)
+  if (addPoints) points(pred, resp, cex = 0.4, pch = 16)
   invisible(mat)
 }
 
