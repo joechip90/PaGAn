@@ -982,13 +982,14 @@ plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @param byChains logical value indicating if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
 #' @param absInt logical value indicating if intercepts for state values should be absolute (by default, they represent differences)
+#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of summary. Use \code{"NULL"} for summary.
 #'
 #' @return Returns data.frame of quantiles of posterior of parameters
 #'
 #' @author Adam Klimes
 #' @export
 #'
-summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
+summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE, randomSample = NULL){
   varsSamples <- lapply(object$mcmcSamples$samples,
     function(x) x[, !grepl(paste0("^lifted|^linState|^", names(object$data)), colnames(x))])
   if (!byChains) varsSamples <- list(do.call(rbind, varsSamples))
@@ -998,9 +999,13 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
     samp
   }
   if (absInt) varsSamples <- lapply(varsSamples, sepInt)
-  auxSummary <- function(x)
-    c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
-  out <- lapply(varsSamples, function(x) t(apply(x, 2, auxSummary)))
+  if (is.null(randomSample)){
+    auxSummary <- function(x)
+      c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
+    out <- lapply(varsSamples, function(x) t(apply(x, 2, auxSummary)))
+  } else {
+    out <- lapply(varsSamples, function(x) t(x[sample(1:nrow(varsSamples[[1]]), randomSample), , drop = FALSE]))
+  }
   # if (length(out) == 1) out <- out[[1]]
   if (!is.null(digit)) out <- lapply(out, round, digit)
   out
@@ -1194,6 +1199,7 @@ findMin <- function(x, extremes = TRUE){
 #' @param addEcos logical value indicating if ecosystems within \code{"ecosTol"} from \code{"value"} should be visualized on the line
 #' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
 #' @param samples scalar specifying number of samples to be taken along predictor
+#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of summary. Use \code{"NULL"} for summary.
 #'
 #' @return Returns list of plotted values
 #'
@@ -1201,10 +1207,11 @@ findMin <- function(x, extremes = TRUE){
 #' @export
 #'
 sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
-                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1, samples = 1000){
+                      setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
+                      plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1,
+                      samples = 1000, randomSample = NULL){
   resp <- mod$data[[1]]
-  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL, randomSample = randomSample)
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
@@ -1218,9 +1225,10 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
   value <- as.matrix(value)
   plotSlice <- function(pars, value, mod){
     getPars <- function(curState, pars, value){
+      pars <- as.matrix(pars)
       auxExtract <- function(toGet, curState, pars, value){
         pos <- match(paste0(c("intercept",colnames(value)), "_", toGet, "[", curState, "]"), rownames(pars))
-        pars[pos[1], "mean"] + as.vector(value %*% pars[pos[-1], "mean"])
+        pars[pos[1], 1] + as.vector(value %*% pars[pos[-1], 1])
       }
       est <- auxExtract("stateVal", curState, pars, value)
       prec <- auxExtract("statePrec", curState, pars, value)
@@ -1262,7 +1270,9 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
     axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
     box(bty = "l")
   }
-  out <- lapply(parsTab, plotSlice, value, mod)
+  out <- if (is.null(randomSample))
+    lapply(parsTab, plotSlice, value, mod) else
+      lapply(parsTab, apply, 2, plotSlice, value, mod)
   invisible(c(out, list(resp = xx)))
 }
 
