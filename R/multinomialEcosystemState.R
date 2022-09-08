@@ -1284,7 +1284,7 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @param mod an object of class "PaGAnmesm"
 #' @param addPoints logical value indicating if ecosystems should be visualized
 #' @param addMinMax logical value indicating if stable states and tipping points should be visualized
-#' @param uncertainty logical value indicating if uncertainty of the landscape should be plotted instead
+#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of mean. Use \code{"NULL"} for mean.
 #' @param ... parameters passed to image()
 #'
 #' @return Returns Probability density (scaled to [0,1]) matrix.
@@ -1292,28 +1292,26 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @author Adam Klimes
 #' @export
 #'
-landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, uncertainty = FALSE, ...){
+landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomSample = NULL, ...){
   svar <- labels(terms(form))
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
   grad <- seq(min(pred), max(pred), length.out = 500)
-  randomSample <- if (uncertainty) 50 else NULL
   slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE, randomSample = randomSample)
   mat <- lapply(slices[[1]], function(x) do.call(cbind, x))
   mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
-  matPlot <- if (uncertainty) apply(mats, 2, apply, 1, sd) else mat[[1]]
+  matPlot <- if (!is.null(randomSample)) apply(mats, 2, apply, 1, sd) else mat[[1]]
   image(grad, slices$resp, t(matPlot), ...)
-  plotMinMax <- function(vals, xCoors, col) {
-    points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = 0.5, col = col)
+  plotMinMax <- function(vals, xCoors, col, cex = 0.5) {
+    points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = cex, col = col)
   }
   if (addMinMax) {
     maxs <- apply(mats, 3, apply, 2, findMin, extremes = FALSE, simplify = FALSE)
     mins <- apply(mats, 3, apply, 2, function(x) findMin(-x), simplify = FALSE)
-    if (!uncertainty) {
-      yCoors <- seq(min(slices$resp), max(slices$resp), length.out = length(slices$resp))
-      Map(plotMinMax, maxs[[1]], grad, col = "red")
-      Map(plotMinMax, mins[[1]], grad, col = "blue")
-    }
+    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = length(slices$resp))
+    cex <- if (!is.null(randomSample)) 0.1 else 0.5
+    lapply(maxs, function(x) Map(plotMinMax, x, grad, col = "red", cex = cex))
+    lapply(mins, function(x) Map(plotMinMax, x, grad, col = "blue", cex = cex))
   }
   if (addPoints) points(pred, resp, cex = 0.4, pch = 16)
   invisible(mat)
