@@ -1047,7 +1047,7 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   }
   form <- formula(paste("~", colnames(newdata)[1]))
   slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
-  probCurve <- as.data.frame(slices[[1]])
+  probCurve <- as.data.frame(slices[[1]][[1]])
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
   getMin <- function(x, resp, extremes = TRUE) {
@@ -1058,11 +1058,17 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   }
   tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
   stableStates <- lapply(-probCurve, getMin, resp)
+  auxFn <- function(x){
+    dist <- abs(resp - x)
+    which(dist == min(dist))
+  }
+  potentEn <- unlist(Map(function(x, y) -x[y]+1, probCurve, vapply(respVal, auxFn, FUN.VALUE = 1)))
   auxDist <- function(x, target) min(abs(x - target))
   obsDat <- NULL
   if (!is.null(respVal)){
     obsDat <- data.frame(
       respVal = respVal,
+      potentEn = potentEn,
       distToTip = unlist(Map(auxDist, respVal, tipPoints)),
       distToState = unlist(Map(auxDist, respVal, stableStates)))
   }
