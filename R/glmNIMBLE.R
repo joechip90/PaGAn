@@ -59,9 +59,8 @@
 #'   \item{predictionSummary}{A \code{data.frame} containing summary statistics for the mean
 #'   predictions}
 #'   \item{WAIC}{A scalar containing the Watanabe-Akaike information criterion for the model}
-#'   \item{DHARMaResiduals}{A \code{list} of objects as created by \code{\link[DHARMa]{createDHARMa}} that contains
-#'   an analysis of residuals of each of the model sub-components.  The first element is the DHARMa analysis for the
-#'   overall GPP residuals.  Each element afterwards is a DHARMa analysis for each of the indirect models.}
+#'   \item{DHARMaResiduals}{An object created by \code{\link[DHARMa]{createDHARMa}} that contains
+#'   an analysis of residuals of the model.}
 #'   \item{parameterFigure}{A graphical object (\code{\link[ggplot2::ggplot]{ggplot}}) containing violin plots
 #'   for each of the parameters}
 #'   \item{rSquared}{A \code{list} object containing the following elements: \code{samples}, a \link[coda]{mcmc.list}

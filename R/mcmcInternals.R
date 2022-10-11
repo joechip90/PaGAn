@@ -74,31 +74,29 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
       future::future({
         outObject <- NULL
         # Redirect the output and messages to a log file
-        sink(tempFiles[procNum], type = "output")
-        sink(tempFiles[procNum], type = "message")
+        outConnec <- file(tempFiles[procNum], open = "at")
+        sink(outConnec, type = "output")
+        sink(outConnec, type = "message")
         on.exit({
           sink(type = "output")
           sink(type = "message")
+          close(outConnec)
         })
-        cat("Initialising process...\n")
-        # Initialise the libraries in the local process (important for some cluster processes)
-        library(coda)
-        library(nimble)
         # Define the model object
         cat("Defining model object...\n")
-        uncompiledModel <- nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
+        uncompiledModel <- nimble::nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
         # Compile the model object
         cat("Compiling model...\n")
-        compiledModel <- compileNimble(uncompiledModel)
+        compiledModel <- nimble::compileNimble(uncompiledModel)
         # Create an MCMC object
         cat("Creating MCMC object...\n")
-        uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity)
+        uncompiledMCMC <- nimble::buildMCMC(uncompiledModel, enableWAIC = TRUE, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity)
         # Compile the MCMC object
         cat("Compiling MCMC object...\n")
-        compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
+        compiledMCMC <- nimble::compileNimble(uncompiledMCMC, project = uncompiledModel)
         # Run the MCMC
         cat("Running MCMC...\n")
-        mcmcOutput <- runMCMC(compiledMCMC, niter = mcmcList$numRuns + mcmcList$numBurnIn, nburnin = mcmcList$numBurnIn, nchains = chainVec[procNum], thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = FALSE, summary = TRUE, setSeed = seedVec[procNum])
+        mcmcOutput <- nimble::runMCMC(compiledMCMC, niter = mcmcList$numRuns + mcmcList$numBurnIn, nburnin = mcmcList$numBurnIn, nchains = chainVec[procNum], thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = FALSE, summary = TRUE, setSeed = seedVec[procNum])
         # Print the process complete text
         cat("Process complete\n")
         # Create an output object
@@ -110,7 +108,10 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
           mcmcOutput = mcmcOutput
         )
         outObject
-      })
+      }, packages = c("nimble", "coda"), globals = list(
+        procNum = procNum, modelCode = modelCode, data = data, constants = constants, paramNodeNames = paramNodeNames, predictionNodeNames = predictionNodeNames,
+        inits = ints, mcmcList = mcmcList, WAIC = WAIC, tempFiles = tempFiles, chainVec = chainVec, seedVec = seedVec)
+      )
     }
     # Create a series of log files to store the process output
     logFiles <- replicate(inNumCores, tempfile())
@@ -125,7 +126,7 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
       modelCode = modelCode, data = data, constants = constants, paramNodeNames = paramNodeNames, predictionNodeNames = predictionNodeNames,
       inits = inits, mcmcList = inMCMCList, WAIC = inWAIC, tempFiles = logFiles, chainVec = chainVec, seedVec = floor(runif(inNumCores) * .Machine$integer.max))
     outText <- ""
-    while(!all(sapply(X = parallelOutputs, FUN = future::resolved))) {
+    while(!all(future::resolved(parallelOutputs))) {
       # Clear the buffer of the last status message
       outMsgChar <- nchar(outText)
       if(outMsgChar > 0) {
