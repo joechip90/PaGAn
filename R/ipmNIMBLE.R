@@ -118,7 +118,7 @@ ipmKernelEvaluation <- function(ipmOb, inputData, mappingValues, kernelFunction,
           var = 1.0 / tempValues,
           sd = sqrt(1.0 / tempValues),
           NULL)
-      # The parameter is implemented in the model as stand deviation so transform it to the appropriate error type
+      # The parameter is implemented in the model as standard deviation so transform it to the appropriate error type
       } else if(any(grepl("SD$", names(curParamSamples), perl = TRUE))) {
         tempValues <- curParamSamples[, grepl("SD$", names(curParamSamples), perl = TRUE)]
         outValues <- switch(errorType,
@@ -234,4 +234,153 @@ ipmKernelAnalysis <- function(fullKernel) {
     stableDistSummary = createSummaryStats(stableDist),
     reproValSummary = createSummaryStats(reproVal)
   )
+}
+
+ipmKernelMatrixComposite <- function(..., numRows, numCols, fillByRow = FALSE) {
+  inKernelList <- tryCatch(list(...), error = function(err) {
+    stop("error encountered processing kernel list: ", err)
+  })
+  inNumRows <- tryCatch(as.integer(numRows), error = function(err) {
+    stop("error encountered processing row number: ", err)
+  })
+  if(length(inNumRows) > 1) {
+    inNumRows <- inNumRows[1]
+    warning("numRows parameter has length greater than 1: only the first element will be used")
+  }
+  inNumCols <- tryCatch(as.integer(numCols), error = function(err) {
+    stop("error encountered processing column number: ", err)
+  })
+  if(length(inNumCols) > 1) {
+    inNumCols <- inNumCols[1]
+    warning("numCols parameter has length greater than 1: only the first element will be used")
+  }
+  if(length(inNumRows) <= 0 || length(inNumCols) <= 0 || is.na(inNumRows) || is.na(inNumCols) || inNumRows <= 0 || inNumCols <= 0) {
+    stop("invalid dimensionality of composite matrix")
+  }
+  if(inNumRows * inNumCols != length(inKernelList)) {
+    stop("dimensionality of composite matrix does not match length of kernel list")
+  }
+  inFillByRow <- tryCatch(as.logical(fillByRow), error = function(err) {
+    stop("error encountered processing the filling order parameter: ", err)
+  })
+  if(length(inFillByRow) > 1) {
+    inFillByRow <- inFillByRow[1]
+    warning("fillByRow parameter has length greater than 1: only the first element will be used")
+  }
+  # Iterate over the inputs and find the maximum matrix dimensions
+  kernelDims <- sapply(X = inKernelList, FUN = function(curKernelMat) {
+    outVal <- c(0, 0)
+    sampleNums <- NA
+    if(is.matrix(curKernelMat)) {
+      outVal <- dim(curKernelMat)
+    } else if(is.numeric(curKernelMat)) {
+      if(length(curKernelMat) >= 0) {
+        outVal <- c(length(curKernelMat), 1)
+      }
+    } else if(is.list(curKernelMat)) {
+      if(!is.null(curKernelMat$expected) && is.matrix(curKernelMat$expected)) {
+        outVal <- dim(curKernelMat$expected)
+      }
+      if(all(outVal > 0)) {
+        if(!is.null(curKernelMat$samples) && is.array(curKernelMat$samples) && !is.null(dim(curKernelMat$samples)) && length(dim(curKernelMat$samples)) >= 2) {
+          if(any(dim(curKernelMat$samples) <= 0)) {
+            outVal <- c(0, 0)
+          } else {
+            outVal <- pmax(outVal, dim(curKernelMat$samples)[1:2])
+          }
+          if(length(dim(curKernelMat$samples)) > 2) {
+            sampleNums <- dim(curKernelMat$samples)[3]
+          }
+        }
+      }
+    }
+    c(outVal, sampleNums)
+  })
+  if(any(kernelDims[1:2, ] <= 0)) {
+    stop("at least one input kernel matrix has invalid dimension structure")
+  }
+  maxDims <- c(max(kernelDims[1, ]), max(kernelDims[2, ]))
+  sampleNums <- max(kernelDims[3, ], na.rm = TRUE)
+  if(any(kernelDims[3, ] <= 0, na.rm = TRUE)) {
+    stop("invalid dimension structure for the number of samples in at least one kernel matrix object")
+  }
+  # Process the kernel matrix list so that all the entries have the same structure and dimensionality
+  processedKernelList <- lapply(X = inKernelList, FUN = function(curKernelMat, maxDims, sampleNums) {
+    outMat <- NULL
+    padMatrix <- function(inMat, maxDims) {
+      inMat[0:(maxDims[1] - 1) %% nrow(inMat) + 1, 0:(maxDims[2] - 1) %% ncol(inMat) + 1]
+    }
+    if(is.matrix(curKernelMat)) {
+      # If the kernel matrix is a matrix then create the full kernel matrix object with dummy samples
+      outMat <- padMatrix(curKernelMat, maxDims)
+      if(!is.na(sampleNums)) {
+        outMat <- list(
+          expected = outMat,
+          samples = replicate(sampleNums, outMat)
+        )
+      }
+    }
+    else if(is.numeric(curKernelMat)) {
+      # If the kernel matrix is a vector then create the full kernel matrix object with dummy samples
+      outMat <- matrix(curKernelMat, nrow = maxDims[1], ncol = maxDims[2])
+      if(!is.na(sampleNums)) {
+        outMat <- list(
+          expected = outMat,
+          samples = replicate(sampleNums, outMat)
+        )
+      }
+    } else if(is.list(curKernelMat)) {
+      # If the kernel matrix is a list then preserve the entire sample information
+      outMat <- padMatrix(curKernelMat$expected, maxDims)
+      if(!is.na(sampleNums)) {
+        outMat <- list(
+          expected = outMat,
+          samples = sapply(X = 1:sampleNums, FUN = function(curSampNum, kernSamples, maxDims) {
+            padMatrix(kernSamples[, , (curSampNum - 1) %% dim(kernSamples)[3] + 1], maxDims)
+          }, kernSamples = curKernelMat$samples, maxDims = maxDims, simplify = "array")
+        )
+      }
+    }
+  }, maxDims = maxDims, sampleNums = sampleNums)
+  # Function that stitches together the matrices
+  stitchMatrixes <- function(matList, numRows, numCols, fillByRow) {
+    # Create a list of indeces in the matrix list for each row
+    indexList <- lapply(X = 1:numRows, FUN = function(curRowInd, numCols, numRows, fillByRow) {
+      ifelse(rep(fillByRow, numCols),
+        curRowInd:(curRowInd + numCols - 1),
+        seq(curRowInd, numRows * numCols, numCols)
+      )
+    }, numCols = numCols, numRows = numRows, fillByRow = fillByRow)
+    # Iterate through each element of the index list and column bind the matrices there
+    do.call(rbind, lapply(X = indexList, FUN = function(curIndeces, matList) {
+      do.call(cbind, matList[curIndeces])
+    }, matList = matList))
+  }
+  # Function to set the dimension names of the matrix
+  setDimNames <- function(inMat, numRows, numCols, maxDims) {
+    outMat <- inMat
+    dimnames(outMat) <- list(
+      paste(rep(paste("row", 1:numRows, sep = ""), each = maxDims[1]), rep(paste("mappedValue", 1:maxDims[1], sep = ""), numRows), sep = "_"),
+      paste(rep(paste("column", 1:numCols, sep = ""), each = maxDims[2]), rep(paste("dataRow", 1:maxDims[2], sep = ""), numCols), sep = "_")
+    )
+    outMat
+  }
+  outMat <- NULL
+  if(is.na(sampleNums)) {
+    outMat <- setDimNames(stitchMatrixes(processedKernelList, inNumRows, inNumCols, inFillByRow), inNumRows, inNumCols, maxDims)
+  } else {
+    outMat <- list(
+      # Stitch together the expected matrices
+      expected = setDimNames(
+        stitchMatrixes(lapply(X = 1:length(processedKernelList), FUN = function(curInd, kernList) { kernList[[curInd]]$expected }, kernList = processedKernelList), inNumRows, inNumCols, inFillByRow),
+        inNumRows, inNumCols, maxDims),
+      # Stitch together each MCMC sample
+      samples = sapply(X = 1:sampleNums, FUN = function(curSample, kernList, inNumRows, inNumCols, inFillByRow, maxDims) {
+        setDimNames(
+          stitchMatrixes(lapply(X = 1:length(kernList), FUN = function(curInd, curSample, kernList) { kernList[[curInd]]$samples[, , curSample] }, curSample = curSample, kernList = kernList), inNumRows, inNumCols, inFillByRow),
+          inNumRows, inNumCols, maxDims)
+      }, kernList = processedKernelList, inNumRows = inNumRows, inNumCols = inNumCols, inFillByRow = inFillByRow, maxDims = maxDims, simplify = "array")
+    )
+  }
+  outMat
 }

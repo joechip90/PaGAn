@@ -104,20 +104,6 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
   uncompiledMCMC <- modelOutputs$uncompiledMCMC
   compiledMCMC <- modelOutputs$compiledMCMC
   mcmcOutput <- modelOutputs$mcmcOutput
-  # Define the model object
-  #uncompiledModel <- nimbleModel(modelCode, constants = modelNodeDefinitions$inputConstants, data = modelNodeDefinitions$inputData,
-  #  inits = initValues, calculate = TRUE)
-  # Compile the model object
-  #compiledModel <- compileNimble(uncompiledModel)
-  #Create an MCMC object
-  #uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE,
-  #  monitors = nonDataNodeNames, monitors2 = predictionNodeNames,
-  #  thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity)
-  # Compile the MCMC object
-  #compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
-  # Run the MCMC
-  #mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCParams$numRuns, nburnin = inMCMCParams$numBurnIn, nchains = inMCMCParams$numChains,
-  #  thin = inMCMCParams$thinDensity, thin2 = inMCMCParams$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = TRUE, summary = TRUE)
   # Retrieve the offset values (if there are any)
   offsetVals <- 0.0
   if(!is.null(modelNodeDefinitions$inputData[[paste("offset", as.character(modelSuffix), sep = "")]])) {
@@ -171,12 +157,16 @@ glmNIMBLE <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs
   )
   # Create violin plots of the regression coefficients
   regCoeffNames <- nonDataNodeNames[grepl("Coeff$", nonDataNodeNames, perl = TRUE) & !grepl("^intercept", nonDataNodeNames, perl = TRUE)]
-  coeffPlot <- ggplot(do.call(rbind, lapply(X = regCoeffNames, FUN = function(curName, inData, inSuffix) {
-    data.frame(coeffVal = inData[, curName], covName = rep(gsub(paste(inSuffix, "Coeff$", sep = ""), "", curName, perl = TRUE), nrow(inData)))
-  }, inData = do.call(rbind, mcmcOutput$samples), inSuffix = as.character(modelSuffix))), aes(covName, coeffVal)) +
-    geom_violin(draw_quantiles = c(0.025, 0.5, 0.975)) + coord_flip() +
-    geom_hline(yintercept = 0.0, colour = "grey") + theme_classic() + ylab("Scaled coefficient value") +
-    theme(axis.title.y = element_blank(), axis.ticks.y = element_blank())
+  coeffPlot <- NULL
+  if(length(regCoeffNames) > 0) {
+    # Only plot the regression coefficients if there are any to plot
+    coeffPlot <- ggplot(do.call(rbind, lapply(X = regCoeffNames, FUN = function(curName, inData, inSuffix) {
+      data.frame(coeffVal = inData[, curName], covName = rep(gsub(paste(inSuffix, "Coeff$", sep = ""), "", curName, perl = TRUE), nrow(inData)))
+    }, inData = do.call(rbind, mcmcOutput$samples), inSuffix = as.character(modelSuffix))), aes(covName, coeffVal)) +
+      geom_violin(draw_quantiles = c(0.025, 0.5, 0.975)) + coord_flip() +
+      geom_hline(yintercept = 0.0, colour = "grey") + theme_classic() + ylab("Scaled coefficient value") +
+      theme(axis.title.y = element_blank(), axis.ticks.y = element_blank())
+  }
   # Organise all the outputs into a list
   list(
     modelDefinition = modelCode,

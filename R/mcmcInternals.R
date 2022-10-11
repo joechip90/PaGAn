@@ -42,13 +42,14 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     inWAIC <- FALSE
   }
   # Set the number of cores equal to the number of chains
-  inNumCores <- min(inNumCores, inMCMCList$numChains, parallel::detectCores() - 1)
+  inNumCores <- min(inNumCores, inMCMCList$numChains, parallel::detectCores())
   # Initialise a set of output objects
   mcmcOutput <- NULL
   uncompiledModel <- NULL
   compiledModel <- NULL
   uncompiledMCMC <- NULL
   compiledMCMC <- NULL
+  outList <- NULL
   if(inNumCores <= 1) {
     # Define the model object
     uncompiledModel <- nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
@@ -60,14 +61,27 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
     # Run the MCMC
     mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCList$numRuns + inMCMCList$numBurnIn, nburnin = inMCMCList$numBurnIn, nchains = inMCMCList$numChains, thin = inMCMCList$thinDensity, thin2 = inMCMCList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = inWAIC, summary = TRUE)
+    outList <- list(
+      uncompiledModel = uncompiledModel,
+      compiledModel = compiledModel,
+      uncompiledMCMC = uncompiledMCMC,
+      compiledMCMC = compiledMCMC,
+      mcmcOutput = mcmcOutput
+    )
   } else {
-    # Create a function to run across multiple cores
+    # Create a function to run chains across multiple cores
     parallelRun <- function(procNum, modelCode, data, constants, paramNodeNames, predictionNodeNames, inits, mcmcList, WAIC, tempFiles, chainVec, seedVec) {
-      processCompleteTxt <- "Process complete"
-      outObject <- NULL
-      if(procNum > 0) {
+      future::future({
+        outObject <- NULL
+        # Redirect the output and messages to a log file
+        sink(tempFiles[procNum], type = "output")
+        sink(tempFiles[procNum], type = "message")
+        on.exit({
+          sink(type = "output")
+          sink(type = "message")
+        })
         cat("Initialising process...\n")
-        # Initialise the libraries in the local process
+        # Initialise the libraries in the local process (important for some cluster processes)
         library(coda)
         library(nimble)
         # Define the model object
@@ -86,7 +100,7 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
         cat("Running MCMC...\n")
         mcmcOutput <- runMCMC(compiledMCMC, niter = mcmcList$numRuns + mcmcList$numBurnIn, nburnin = mcmcList$numBurnIn, nchains = chainVec[procNum], thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = FALSE, summary = TRUE, setSeed = seedVec[procNum])
         # Print the process complete text
-        cat(processCompleteTxt, "\n", sep = "")
+        cat("Process complete\n")
         # Create an output object
         outObject <- list(
           uncompiledModel = uncompiledModel,
@@ -95,77 +109,54 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
           compiledMCMC = compiledMCMC,
           mcmcOutput = mcmcOutput
         )
-      } else {
-        # The first process is a reporting process that reports back on the current status of the other processes
-        waitingText <- "Waiting for processes to initialise ...\n"
-        cat(waitingText)
-        while(any(!sapply(X = tempFiles, FUN = file.exists))) {
-          Sys.sleep(10)
-        }
-        # Retrieve the text in the temporary files
-        retrieveProcessText <- function(tempFiles) {
-          sapply(X = tempFiles, FUN = function(curFile) {
-            paste(readLines(curFile, warn = FALSE), collapse = "\n")
-          })
-        }
-        # Display the output text
-        displayOutputText <- function(processText, outMessage) {
-          # Clear the buffer of the last status message
-          outMsgChar <- nchar(outMessage)
-          if(outMsgChar > 0) {
-            cat(rep("\r", outMsgChar), sep = "")
-          }
-          # Create a new status message
-          outMessage <- paste("\n--- PROCESS ", 1:length(chainVec), " (", chainVec, " chain", ifelse(chainVec > 1, "s", ""), ") ---\n\n", processText, "\n", sep = "", collapse = "\n")
-          cat(outMessage)
-          outMessage
-        }
-        # Intermittently query the status files and report them
-        processText <- retrieveProcessText(tempFiles)
-        outMessage <- ""
-        while(any(!sapply(X = processText, FUN = function(curText, processCompleteTxt) { grepl(paste(processCompleteTxt, "\\s*$", sep = ""), curText, perl = TRUE) }, processCompleteTxt = processCompleteTxt))) {
-          # Display the current status
-          outMessage <- displayOutputText(processText, outMessage)
-          Sys.sleep(20)
-          # Retrieve the text in the temporary files
-          processText <- retrieveProcessText(tempFiles)
-        }
-        outMessage <- displayOutputText(processText, outMessage)
-      }
-      outObject
+        outObject
+      })
     }
+    # Create a series of log files to store the process output
+    logFiles <- replicate(inNumCores, tempfile())
     # Calculate a balancer to distribute the chains between cores
     chainVec <- rep(ceiling(inMCMCList$numChains / inNumCores), inNumCores)
     overCount <- sum(chainVec) - inMCMCList$numChains
     if(overCount != 0) {
       chainVec[1:overCount] <- chainVec[1:overCount] + ifelse(overCount > 0, -1, 1)
     }
-    # Initialise a cluster
-    parCluster <- parallel::makeCluster(inNumCores + 1, outfile = "")
-    logFiles <- replicate(inNumCores, tempfile())
-    clusterApply(cl = parCluster, x = append(list(stdout()), as.list(logFiles)), fun = function(inVal) {
-      sink(inVal, type = "output")
-      sink(stdout(), type = "message")
-    })
     # Call the model with the chains distributed across the cores
-    parallelOutputs <- tryCatch(clusterApply(cl = parCluster, x = 0:inNumCores, fun = parallelRun,
+    parallelOutputs <- lapply(X = 1:inNumCores, FUN = parallelRun,
       modelCode = modelCode, data = data, constants = constants, paramNodeNames = paramNodeNames, predictionNodeNames = predictionNodeNames,
-      inits = inits, mcmcList = inMCMCList, WAIC = inWAIC, tempFiles = logFiles, chainVec = chainVec, seedVec = floor(runif(inNumCores) * .Machine$integer.max)),
-      error = function(err) {
-        stopCluster(parCluster)
-        stop(err)
-    })
-    # Stop the cluster after the models are run
-    stopCluster(parCluster)
+      inits = inits, mcmcList = inMCMCList, WAIC = inWAIC, tempFiles = logFiles, chainVec = chainVec, seedVec = floor(runif(inNumCores) * .Machine$integer.max))
+    outText <- ""
+    while(!all(sapply(X = parallelOutputs, FUN = future::resolved))) {
+      # Clear the buffer of the last status message
+      outMsgChar <- nchar(outText)
+      if(outMsgChar > 0) {
+        cat(rep("\r", outMsgChar), sep = "")
+      }
+      # Create a status message from the text contained within the log files
+      outText <- paste(sapply(X = 1:inNumCores, FUN = function(procNum, logFiles) {
+        procText <- paste("------ PROCESS ", procNum, " ------", sep = "")
+        if(file.exists(logFiles[procNum])) {
+          procText <- c(procText, readLines(logFiles[procNum], warn = FALSE))
+        } else {
+          procText <- c(procText, "Waiting for process to initialise...")
+        }
+        paste(procText, collapse = "\n")
+      }, logFiles = logFiles), collapse = "\n\n")
+      cat(outText)
+      # Sleep for 10 seconds before querying whether the processes are complete again
+      Sys.sleep(10)
+    }
+    cat("\n\nAll processes complete\n")
+    # Retrieve the values from the future evaluations
+    parallelOutputs <- lapply(X = parallelOutputs, FUN = future::value)
     # Stitch together the outputs from the parallel processes
-    uncompiledModel <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$uncompiledModel })
-    compiledModel <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$compiledModel })
-    uncompiledMCMC <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$uncompiledMCMC })
-    compiledMCMC <- lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$compiledMCMC })
+    uncompiledModel <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$uncompiledModel })
+    compiledModel <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$compiledModel })
+    uncompiledMCMC <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$uncompiledMCMC })
+    compiledMCMC <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$compiledMCMC })
     # Create amalgamated coda objects from the runs spread across the processes
     mcmcOutput <- list(
-      samples = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$mcmcOutput$samples })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
-      samples2 = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores + 1], FUN = function(curOb) { curOb$mcmcOutput$samples2 })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
+      samples = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$mcmcOutput$samples })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
+      samples2 = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$mcmcOutput$samples2 })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
       summary = NULL, WAIC = NULL
     )
     # Recreate the summary information for the samples across the chains
@@ -182,14 +173,15 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     tempMCMC <- buildMCMC(tempModel, enableWAIC = TRUE, monitors = paramNodeNames, thin = inMCMCList$thinDensity)
     tempCMCMC <- compileNimble(tempMCMC, project = tempModel)
     mcmcOutput$WAIC <- calculateWAIC(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix)), model = tempModel)
+    outList <- list(
+      uncompiledModel = uncompiledModel,
+      compiledModel = compiledModel,
+      uncompiledMCMC = uncompiledMCMC,
+      compiledMCMC = compiledMCMC,
+      mcmcOutput = mcmcOutput
+    )
   }
-  list(
-    uncompiledModel = uncompiledModel,
-    compiledModel = compiledModel,
-    uncompiledMCMC = uncompiledMCMC,
-    compiledMCMC = compiledMCMC,
-    mcmcOutput = mcmcOutput
-  )
+  outList
 }
 
 sanityCheckMCMCParameters <- function(inputList) {
