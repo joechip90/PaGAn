@@ -110,7 +110,7 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
         outObject
       }, packages = c("nimble", "coda"), globals = list(
         procNum = procNum, modelCode = modelCode, data = data, constants = constants, paramNodeNames = paramNodeNames, predictionNodeNames = predictionNodeNames,
-        inits = ints, mcmcList = mcmcList, WAIC = WAIC, tempFiles = tempFiles, chainVec = chainVec, seedVec = seedVec)
+        inits = inits, mcmcList = mcmcList, WAIC = WAIC, tempFiles = tempFiles, chainVec = chainVec, seedVec = seedVec)
       )
     }
     # Create a series of log files to store the process output
