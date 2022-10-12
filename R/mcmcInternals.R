@@ -176,13 +176,15 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
       nimble::samplesSummary(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix))),
       nimble::samplesSummary(do.call(rbind, lapply(X = mcmcOutput$samples2, FUN = as.matrix)))
     ))), c(paste("chain", 1:inMCMCList$numChains, sep = ""), "all.chains"))
-    # Calculate the WAIC using all the samples spread across the processes
-    cat("Recompiling model for WAIC calculation...\n")
-    tempModel <- nimble::nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
-    tempCModel <- nimble::compileNimble(tempModel)
-    tempMCMC <- nimble::buildMCMC(tempModel, enableWAIC = TRUE, monitors = paramNodeNames, thin = inMCMCList$thinDensity)
-    tempCMCMC <- nimble::compileNimble(tempMCMC, project = tempModel)
-    mcmcOutput$WAIC <- nimble::calculateWAIC(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix)), model = tempModel)
+    if(inWAIC) {
+      # Calculate the WAIC using all the samples spread across the processes
+      cat("Recompiling model for WAIC calculation...\n")
+      tempModel <- nimble::nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
+      tempCModel <- nimble::compileNimble(tempModel)
+      tempMCMC <- nimble::buildMCMC(tempModel, enableWAIC = TRUE, monitors = paramNodeNames, thin = inMCMCList$thinDensity)
+      tempCMCMC <- nimble::compileNimble(tempMCMC, project = tempModel)
+      mcmcOutput$WAIC <- nimble::calculateWAIC(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix)), model = tempModel)
+    }
     outList <- list(
       uncompiledModel = uncompiledModel,
       compiledModel = compiledModel,
