@@ -192,10 +192,40 @@ bayesRSquared <- function(predictionChains, observedResponse) {
   vzFunc <- function(zIn) {
     sum((zIn - mean(zIn))^2) / (length(zIn) - 1.0)
   }
+  # Sanity check the inputs
+  if("mcmc" %in% class(predictionChains)) {
+    predictionChains <- coda::mcmc.list(predictionChains)
+  } else if("mcmc.list" %in% class(predictionChains)) {
+    predictionChains <- tryCatch(as.mcmc.list(predictionChains), error = function(err) {
+      stop("error calculating R squared: ", err)
+    })
+  }
+  if(length(predictionChains) <= 0) {
+    stop("error calculating R squared: length of prediction chains is zero")
+  }
+  if(!is.numeric(observedResponse)) {
+    observedResponse <- tryCatch(as.numeric(observedResponse), error = function(err) {
+      stop("error calculating R squared: ", err)
+    })
+  }
+  if(length(observedResponse) <= 0) {
+    stop("error calculating R squared: length of the observed response is zero")
+  }
   # Calculate the r squared values for each of the sampled predictors across the chains
   sampledRSquared <- do.call(coda::mcmc.list, lapply(X = as.list(predictionChains), FUN = function(curChain, observedResponse) {
     # Retrieve the samples from the current chain as a matrix
     curMatrix <- as.matrix(curChain)
+    if(ncol(curMatrix) != length(observedResponse)) {
+      if(!is.null(names(observedResponse)) && !is.null(colnames(curMatrix))) {
+        if(!all(names(observedResponse) %in% colnames(curMatrix))) {
+          stop("error calculating R squared: response data has elements that are not present in the prediction chains")
+        } else {
+          curMatrix <- curMatrix[, names(observedResponse), drop = FALSE]
+        }
+      } else {
+        stop("error calculating R squared: response data length is different than column width in the prediction chains")
+      }
+    }
     # Calculate the r squared for each sample of the MCMC chain
     rSquaredVals <- apply(X = curMatrix, FUN = function(curPreds, observedResponse) {
       # Remove any elements that have NA values in the observed response

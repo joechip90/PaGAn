@@ -44,6 +44,9 @@
 #' @param mcmcParams A list containing parameters regulating the Markov chain Monte Carlo
 #' algorithm applied in NIMBLE.  This list needs the following named elements: numRuns, numChains,
 #' numBurnIn, thinDensity, predictThinDensity
+#' @param numCores An \code{integer} scalar denoting the number of cores to use.  MCMC chains
+#' will be distributed across the cores.  A value of \code{NA} or \code{0} results in the number
+#' of cores being set equal to that returned by \code{\link[parallel::detectCores]{detectCores}}
 #'
 #' @details Each element of \code{indirectComponents} is a list containing the following elements:
 #' \itemize{
@@ -114,7 +117,8 @@ gppLightCurveCorrection <- function(
   indirectComponents = NULL,
   regCoeffs = "none",
   lightStandards = c(),
-  mcmcParams = list()
+  mcmcParams = list(),
+  numCores = 1
 ) {
   ## 1.1.1. Sanity test the inputs ----
   inData <- tryCatch(as.data.frame(inputData), error = function(err) {
@@ -338,30 +342,18 @@ gppLightCurveCorrection <- function(
   initValues <- setNames(lapply(X = nonDataNodeNames, FUN = function(curName) {
     ifelse(grepl("Coeff$", curName, perl = TRUE), 0.0, 1.0)
   }), nonDataNodeNames)
-  # Define the model object
-  uncompiledModel <- nimbleModel(modelCode, constants = modelNodeDefinitions$inputConstants, data = modelNodeDefinitions$inputData,
-    inits = initValues, calculate = TRUE)
-  # Compile the model object
-  compiledModel <- compileNimble(uncompiledModel)
-  #Create an MCMC object
-  uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = TRUE,
-    monitors = nonDataNodeNames, monitors2 = c(predictionNodeNames, "gppSD"),
-    thin = inMCMCParameters$thinDensity, thin2 = inMCMCParameters$predictThinDensity)
-  # Compile the MCMC object
-  compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
-  # Run the MCMC
-  mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCParameters$numRuns, nburnin = inMCMCParameters$numBurnIn, nchains = inMCMCParameters$numChains,
-    thin = inMCMCParameters$thinDensity, thin2 = inMCMCParameters$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = TRUE, summary = TRUE)
+  # Run the model
+  modelOut <- mcmcNIMBLERun(modelCode, modelNodeDefinitions$inputData, modelNodeDefinitions$inputConstants, nonDataNodeNames, c(predictionNodeNames, "gppSD"), initValues, inMCMCParameters, numCores)
   ## 1.1.4. Model post-processing ----
   # Simulate responses from the posterior predictive distribution
-  simulatedValues <- apply(X = as.matrix(do.call(rbind, mcmcOutput$samples2))[, c(paste("gppMeanPred[", 1:nrow(inputData), "]", sep = ""), "gppSD")], FUN = function(curRow) {
+  simulatedValues <- apply(X = as.matrix(do.call(rbind, modelOut$mcmcOutput$samples2))[, c(paste("gppMeanPred[", 1:nrow(inputData), "]", sep = ""), "gppSD")], FUN = function(curRow) {
     # Retrieve the mean and standard deviation sampled in the MCMC
     predMeans <- curRow[1:(length(curRow) - 1)]
     predSD <- curRow[length(curRow)]
     rgamma(length(predMeans), shape = (predMeans * predMeans) / (predSD * predSD), scale = (predSD * predSD) / predMeans)
   }, MARGIN = 1)
   # Calculate the fitted median response
-  fittedPred <- mcmcOutput$summary$all.chains[paste("gppMeanPred[", 1:nrow(inputData), "]", sep = ""), "Median"]
+  fittedPred <- modelOut$mcmcOutput$summary$all.chains[paste("gppMeanPred[", 1:nrow(inputData), "]", sep = ""), "Median"]
   # Create a DHARMa object so that model checking can be done
   residAnalysisOb <- createDHARMa(
     simulatedResponse = simulatedValues,
@@ -378,7 +370,7 @@ gppLightCurveCorrection <- function(
         grepl("logyAssymCoeff$", curName, perl = TRUE), "Y-asymptote model", "Multiplier model")), nrow(mcmcSamples)),
       coeffVal = mcmcSamples[, curName]
     )
-  }, mcmcSamples = do.call(rbind, mcmcOutput$samples)))
+  }, mcmcSamples = do.call(rbind, modelOut$mcmcOutput$samples)))
   regFrame$covName <- as.factor(regFrame$covName)
   regFrame$submodel <- as.factor(regFrame$submodel)
   coeffPlot <- ggplot(regFrame, aes(covName, coeffVal)) + geom_violin(draw_quantiles = c(0.025, 0.5, 0.975)) + coord_flip() +
@@ -386,17 +378,17 @@ gppLightCurveCorrection <- function(
     theme(axis.title.y = element_blank(), axis.ticks.y = element_blank()) + facet_grid(. ~ submodel)
   # Organise all the outputs into a list
   outList <- list(
-    modelDefinition = modelCode,
-    compiledModel = compiledModel,
-    compiledMCMC = compiledMCMC,
-    parameterSamples = mcmcOutput$samples,
-    parameterSummary = mcmcOutput$summary$all.chains[nonDataNodeNames, ],
-    predictionSamples = mcmcOutput$samples2,
-    predictionSummary = mcmcOutput$summary$all.chains[paste("gppMeanPred[", 1:nrow(inputData), "]", sep = ""), ],
-    WAIC = mcmcOutput$WAIC,
+    modelDefinition = modelOut$modelCode,
+    compiledModel = modelOut$compiledModel,
+    compiledMCMC = modelOut$compiledMCMC,
+    parameterSamples = modelOut$mcmcOutput$samples,
+    parameterSummary = modelOut$mcmcOutput$summary$all.chains[nonDataNodeNames, ],
+    predictionSamples = modelOut$mcmcOutput$samples2,
+    predictionSummary = modelOut$mcmcOutput$summary$all.chains[paste("gppMeanPred[", 1:nrow(inputData), "]", sep = ""), ],
+    WAIC = modelOut$mcmcOutput$WAIC,
     DHARMaResiduals = residAnalysisOb,
     parameterFigure = coeffPlot,
-    rSquared = bayesRSquared(mcmcOutput$samples2, modelNodeDefinitions$inputData$gppValues)
+    rSquared = bayesRSquared(modelOut$mcmcOutput$samples2, setNames(modelNodeDefinitions$inputData$gppValues, paste("gppMeanPred[", 1:nrow(inputData), "]", sep = "")))
   )
   # Rearrange the standardised gpp predictions
   if(length(inLightStandards) > 0) {
@@ -404,24 +396,24 @@ gppLightCurveCorrection <- function(
     if(length(inLightStandards) > 1) {
       standardSummary <- setNames(lapply(X = 1:length(inLightStandards), FUN = function(curIndex, summaryTable, numRows) {
         summaryTable[paste("standardPred[", 1:numRows, ", ", curIndex, "]", sep = ""), ]
-      }, summaryTable = mcmcOutput$summary$all.chains, numRows = nrow(inputData)),
+      }, summaryTable = modelOut$mcmcOutput$summary$all.chains, numRows = nrow(inputData)),
         paste("lightStandard", inLightStandards, sep = ""))
     } else {
       standardSummary <- setNames(
-        list(mcmcOutput$summary$all.chains[paste("standardPred[", 1:nrow(inputData), "]", sep = ""), ]),
+        list(modelOut$mcmcOutput$summary$all.chains[paste("standardPred[", 1:nrow(inputData), "]", sep = ""), ]),
         paste("lightStandard", inLightStandards, sep = ""))
     }
     outList <- c(outList, list(standardSummary = standardSummary))
   }
   # Run the indirect models
   if(length(inIndirectComponents) > 0) {
-    indirectModelOutputs <- lapply(X = inIndirectComponents, FUN = function(curParams) {
+    indirectModelOutputs <- lapply(X = inIndirectComponents, FUN = function(curParams, numCores) {
       curForm <- as.formula(curParams$modelFormula)
       # Retrieve a name for the current indirect pathway
       modelName <- gsub("\\s*~.*$", "", tidyLongFormula(deparse(substitute(curForm))), perl = TRUE)
       message("---- Running ", modelName, " indirect pathway model ----")
-      glmNIMBLE(curParams$modelFormula, curParams$inputData, curParams$errorFamily, curParams$regCoeffs, curParams$modelSuffix, curParams$mcmcParams)
-    })
+      glmNIMBLE(curParams$modelFormula, curParams$inputData, curParams$errorFamily, curParams$regCoeffs, curParams$modelSuffix, curParams$mcmcParams, numCores)
+    }, numCores = numCores)
     outList <- c(outList, list(indirectModelOutputs = indirectModelOutputs))
   }
   outList
