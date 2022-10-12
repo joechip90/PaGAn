@@ -165,8 +165,20 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     compiledMCMC <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$compiledMCMC })
     # Create amalgamated coda objects from the runs spread across the processes
     mcmcOutput <- list(
-      samples = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$mcmcOutput$samples })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
-      samples2 = mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$mcmcOutput$samples2 })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
+      samples = coda::mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) {
+        curOut <- curOb$mcmcOutput$samples
+        if("mcmc" %in% class(curOut)) {
+          curOut <- coda::mcmc.list(curOut)
+        }
+        curOut
+      })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
+      samples2 = coda::mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) {
+        curOut <- curOb$mcmcOutput$samples2
+        if("mcmc" %in% class(curOut)) {
+          curOut <- coda::mcmc.list(curOut)
+        }
+        curOut
+      })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
       summary = NULL, WAIC = NULL
     )
     # Recreate the summary information for the samples across the chains
@@ -178,6 +190,9 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     ))), c(paste("chain", 1:inMCMCList$numChains, sep = ""), "all.chains"))
     if(inWAIC) {
       # Calculate the WAIC using all the samples spread across the processes
+      # For some reason using the previously compiled or uncompiled model in the calculateWAIC function causes
+      # R to crash so we recompile the model here just for the WAIC calculation.  This is not super efficient
+      # and will probably need to be improved later on
       cat("Recompiling model for WAIC calculation...\n")
       tempModel <- nimble::nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
       tempCModel <- nimble::compileNimble(tempModel)
