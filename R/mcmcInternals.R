@@ -26,7 +26,7 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
   if(is.na(inNumCores) || inNumCores <= 0) {
     # If the number of cores is NA or equal to less than zero then just set the number
     # of cores equal to the number present in the system
-    inNumCores <- parallel::detectCores()
+    inNumCores <- future::availableCores()
   }
   # Sanity check the WAIC inclusion criterion
   inWAIC <- tryCatch(as.logical(WAIC), error = function(err) {
@@ -42,7 +42,7 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
     inWAIC <- FALSE
   }
   # Set the number of cores equal to the number of chains
-  inNumCores <- min(inNumCores, inMCMCList$numChains, parallel::detectCores())
+  inNumCores <- min(inNumCores, inMCMCList$numChains, future::availableCores())
   # Initialise a set of output objects
   mcmcOutput <- NULL
   uncompiledModel <- NULL
