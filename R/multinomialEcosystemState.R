@@ -1312,8 +1312,8 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomS
     points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = cex, col = col)
   }
   if (addMinMax) {
-    maxs <- apply(mats, 3, apply, 2, findMin, extremes = FALSE, simplify = FALSE)
-    mins <- apply(mats, 3, apply, 2, function(x) findMin(-x), simplify = FALSE)
+    maxs <- apply(mats, 3, function(y) apply(y, 2, findMin, extremes = FALSE, simplify = FALSE), simplify = FALSE)
+    mins <- apply(mats, 3, function(y) apply(y, 2, function(x) findMin(-x), simplify = FALSE), simplify = FALSE)
     yCoors <- seq(min(slices$resp), max(slices$resp), length.out = length(slices$resp))
     cex <- if (!is.null(randomSample)) 0.1 else 0.5
     lapply(maxs, function(x) Map(plotMinMax, x, grad, col = "red", cex = cex))
