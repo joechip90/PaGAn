@@ -982,13 +982,14 @@ plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
 #' @param byChains logical value indicating if the summary should be calculated for each chain separately
 #' @param digit integer specifying the number of decimal places to be used. Use \code{"NULL"} for no rounding.
 #' @param absInt logical value indicating if intercepts for state values should be absolute (by default, they represent differences)
+#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of summary. Use \code{"NULL"} for summary.
 #'
 #' @return Returns data.frame of quantiles of posterior of parameters
 #'
 #' @author Adam Klimes
 #' @export
 #'
-summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE){
+summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALSE, randomSample = NULL){
   varsSamples <- lapply(object$mcmcSamples$samples,
     function(x) x[, !grepl(paste0("^lifted|^linState|^", names(object$data)), colnames(x))])
   if (!byChains) varsSamples <- list(do.call(rbind, varsSamples))
@@ -998,9 +999,13 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
     samp
   }
   if (absInt) varsSamples <- lapply(varsSamples, sepInt)
-  auxSummary <- function(x)
-    c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
-  out <- lapply(varsSamples, function(x) t(apply(x, 2, auxSummary)))
+  if (is.null(randomSample)){
+    auxSummary <- function(x)
+      c(mean = mean(x), sd = sd(x), quantile(x, c(0.025,0.25,0.75,0.975), na.rm = TRUE))
+    out <- lapply(varsSamples, function(x) t(apply(x, 2, auxSummary)))
+  } else {
+    out <- lapply(varsSamples, function(x) t(x[sample(1:nrow(varsSamples[[1]]), randomSample), , drop = FALSE]))
+  }
   # if (length(out) == 1) out <- out[[1]]
   if (!is.null(digit)) out <- lapply(out, round, digit)
   out
@@ -1042,7 +1047,7 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   }
   form <- formula(paste("~", colnames(newdata)[1]))
   slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
-  probCurve <- as.data.frame(slices[[1]])
+  probCurve <- as.data.frame(slices[[1]][[1]])
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
   getMin <- function(x, resp, extremes = TRUE) {
@@ -1053,11 +1058,17 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   }
   tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
   stableStates <- lapply(-probCurve, getMin, resp)
+  auxFn <- function(x){
+    dist <- abs(resp - x)
+    which(dist == min(dist))
+  }
+  potentEn <- unlist(Map(function(x, y) -x[y]+1, probCurve, vapply(respVal, auxFn, FUN.VALUE = 1)))
   auxDist <- function(x, target) min(abs(x - target))
   obsDat <- NULL
   if (!is.null(respVal)){
     obsDat <- data.frame(
       respVal = respVal,
+      potentEn = potentEn,
       distToTip = unlist(Map(auxDist, respVal, tipPoints)),
       distToState = unlist(Map(auxDist, respVal, stableStates)))
   }
@@ -1194,6 +1205,8 @@ findMin <- function(x, extremes = TRUE){
 #' @param addEcos logical value indicating if ecosystems within \code{"ecosTol"} from \code{"value"} should be visualized on the line
 #' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
 #' @param samples scalar specifying number of samples to be taken along predictor
+#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of summary. Use \code{"NULL"} for summary.
+#' @param probDens logical value indicating if non-scaled probability density should be returned and plotted. Default is FALSE.
 #'
 #' @return Returns list of plotted values
 #'
@@ -1201,10 +1214,12 @@ findMin <- function(x, extremes = TRUE){
 #' @export
 #'
 sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
-                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1, samples = 1000){
+                      setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
+                      plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1,
+                      samples = 1000, randomSample = NULL, probDens = FALSE){
   resp <- mod$data[[1]]
-  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL)
+  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL, randomSample = randomSample)
+  if (is.null(randomSample)) parsTab <- lapply(parsTab, function(x) x[, "mean", drop = FALSE])
   svar <- labels(terms(form))
   Nstates <- mod$constants$numStates
   invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
@@ -1216,11 +1231,12 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
   }
   if (is.null(dim(value))) value <- matrix(value, length(value), dimnames = list(NULL, svar))
   value <- as.matrix(value)
-  plotSlice <- function(pars, value, mod){
+  calcParsVal <- function(pars, value, mod){
     getPars <- function(curState, pars, value){
+      pars <- as.matrix(pars)
       auxExtract <- function(toGet, curState, pars, value){
         pos <- match(paste0(c("intercept",colnames(value)), "_", toGet, "[", curState, "]"), rownames(pars))
-        pars[pos[1], "mean"] + as.vector(value %*% pars[pos[-1], "mean"])
+        pars[pos[1], 1] + as.vector(value %*% pars[pos[-1], 1])
       }
       est <- auxExtract("stateVal", curState, pars, value)
       prec <- auxExtract("statePrec", curState, pars, value)
@@ -1231,6 +1247,9 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
     parsVal[, "prob", 1] <- rep(0, nrow(value))
     parsVal[, "prob", ] <- exp(parsVal[, "prob", ]) / rowSums(exp(parsVal[, "prob", , drop = FALSE]))
     rownames(parsVal) <- paste0("value", 1:nrow(value))
+    parsVal
+  }
+  calcDens <- function(parsVal){
     aux <- parsVal[, "est", ]
     auxDim <- c(nrow(value), Nstates, 2)
     parsD <- switch(as.character(mod$errorModel),
@@ -1244,26 +1263,35 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
     dens <- apply(parsD, 1, apply, 1, function(pars) do.call(dfun, list(xx, pars[1], pars[2])), simplify = FALSE)
     dens <- Map(function(den, prob) den * rep(prob, each = nrow(den)), dens, data.frame(t(matrix(parsVal[, "prob", ], nrow = nrow(value)))))
     dens <- lapply(dens, rowSums)
-    densSt <- lapply(dens, function(x) x / max(x))
-    if (doPlot){
-      lines(xx[1:samples], densSt[[1]][1:samples])
-      if (plotEst) {
+    densSt <- if (probDens) dens else lapply(dens, function(x) x / max(x))
+    densSt
+  }
+  parsValList <- lapply(parsTab, apply, 2, calcParsVal, value, mod, simplify = FALSE)
+  densOut <- lapply(parsValList, lapply, calcDens)
+  plotSlice <- function(sliceDens){
+    lines(xx[1:samples], sliceDens[[1]][1:samples])
+    if (addEcos) points(tail(xx, -samples), tail(sliceDens[[1]], -samples), pch = 16)
+  }
+  if (doPlot) {
+    if (nrow(value) > 1) warning("Only the curve for the first value is plotted.")
+    yrange <- if (probDens) c(0, 1.05 * max(unlist(lapply(densOut, lapply, "[", 1)))) else c(1, 0)
+    plot(range(resp), yrange, type = "n", ylab = ifelse(probDens, "Probability density", "Potential energy"), xlab = xlab, ylim = yrange, axes = FALSE, yaxs = "i")
+    if (xaxis) axis(1)
+    if (probDens) axis(2, las = 2) else axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
+    box(bty = "l")
+    lapply(densOut, lapply, plotSlice)
+
+    if (plotEst) {
+      plotEstFn <- function(parsVal){
         rgbVec <- col2rgb(setCol)
         cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
         abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
       }
-      if (addEcos) points(tail(xx, -samples), tail(densSt[[1]], -samples), pch = 16)
+      lapply(parsValList, lapply, plotEstFn)
     }
-    densSt
+
   }
-  if (doPlot){
-    plot(range(resp), c(1, 0), type = "n", ylab = "Potential energy", xlab = xlab, ylim = c(1, 0), axes = FALSE, yaxs = "i")
-    if (xaxis) axis(1)
-    axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
-    box(bty = "l")
-  }
-  out <- lapply(parsTab, plotSlice, value, mod)
-  invisible(c(out, list(resp = xx)))
+  invisible(c(densOut, list(resp = xx)))
 }
 
 ### 4.3. ==== Probability landscape from Multinomial Ecosystem State Model ====
@@ -1275,6 +1303,8 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @param mod an object of class "PaGAnmesm"
 #' @param addPoints logical value indicating if ecosystems should be visualized
 #' @param addMinMax logical value indicating if stable states and tipping points should be visualized
+#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of mean. Use \code{"NULL"} for mean.
+#' @param otherPreds named vector of values of predictors not specified by form. Default are zeros
 #' @param ... parameters passed to image()
 #'
 #' @return Returns Probability density (scaled to [0,1]) matrix.
@@ -1282,23 +1312,32 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
 #' @author Adam Klimes
 #' @export
 #'
-landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, ...){
+landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomSample = NULL, otherPreds = NULL, ...){
   svar <- labels(terms(form))
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
   grad <- seq(min(pred), max(pred), length.out = 500)
-  slices <- sliceMESM(form, mod, value = grad, byChains = FALSE, doPlot = FALSE)
-  mat <- do.call(cbind, slices[[1]])
-  image(grad, slices$resp, t(mat), ...)
-  plotMinMax <- function(matCol, xCoors) {
-    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = nrow(mat))
-    mins <- findMin(matCol)
-    maxs <- findMin(-matCol, extremes = FALSE)
-    points(rep(xCoors, length(maxs)), yCoors[maxs], pch = 16, col = "red", cex = 0.5)
-    points(rep(xCoors, length(mins)), yCoors[mins], pch = 16, col = "blue", cex = 0.5) #-yCoors[mins]+1
+  if (!is.null(otherPreds)){
+    valueDF <- data.frame(grad, matrix(otherPreds, 1, length(otherPreds),
+      dimnames = list(NULL, names(otherPreds))))
+    colnames(valueDF)[1] <- svar
+  }  else valueDF <- grad
+  slices <- sliceMESM(form, mod, value = valueDF, byChains = FALSE, doPlot = FALSE, randomSample = randomSample)
+  mat <- lapply(slices[[1]], function(x) do.call(cbind, x))
+  mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
+  matPlot <- if (!is.null(randomSample)) apply(mats, 2, apply, 1, sd) else mat[[1]]
+  image(grad, slices$resp, t(matPlot), ...)
+  plotMinMax <- function(vals, xCoors, col, cex = 0.5) {
+    points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = cex, col = col)
   }
-  if (addMinMax) Map(plotMinMax, data.frame(-mat+1), seq(min(pred), max(pred), length.out = ncol(mat)))
-  stRange <- function(x) (x - min(x)) / max(x - min(x))
+  if (addMinMax) {
+    maxs <- apply(mats, 3, function(y) apply(y, 2, findMin, extremes = FALSE, simplify = FALSE), simplify = FALSE)
+    mins <- apply(mats, 3, function(y) apply(y, 2, function(x) findMin(-x), simplify = FALSE), simplify = FALSE)
+    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = length(slices$resp))
+    cex <- if (!is.null(randomSample)) 0.1 else 0.5
+    lapply(maxs, function(x) Map(plotMinMax, x, grad, col = "red", cex = cex))
+    lapply(mins, function(x) Map(plotMinMax, x, grad, col = "blue", cex = cex))
+  }
   if (addPoints) points(pred, resp, cex = 0.4, pch = 16)
   invisible(mat)
 }
