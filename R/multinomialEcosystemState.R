@@ -891,7 +891,7 @@ fitMultinomialEcosystemState <- function(
 #' @param transCol logical value indicating usage of transparent colours
 #' @param addWAIC logical value indication display of WAIC in upper right corner of the plot
 #' @param setCol vector of colours to be used for states
-#' @param drawXaxis logical value indicating whether values should be marked on x-axis
+#' @param drawAxes logical value indicating whether values should be marked on axes
 #' @param SDmult scalar multiplying visualized standard deviation (to make lines for small standard deviation visible)
 #' @param byChain logical value indicating whether to plot states for each chain
 #' @param xlab a label for the x axis, defaults to predictor name.
@@ -906,7 +906,7 @@ fitMultinomialEcosystemState <- function(
 #'
 plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                      drawXaxis = TRUE, SDmult = 1, byChains = TRUE, xlab = NULL, ylab = "Response", ...) {
+                      drawAxes = TRUE, SDmult = 1, byChains = TRUE, xlab = NULL, ylab = "Response", ...) {
   resp <- x$data[[1]]
   dat <- data.frame(x$data, x$constants[sapply(x$constants, length) ==
                                               length(resp)])
@@ -923,8 +923,10 @@ plot.PaGAnmesm <- function(x, form, yaxis, transCol = TRUE, addWAIC = FALSE,
   axis(1, labels = c("", ""), at = c(2*usr[1]-usr[2], 2*usr[2]-usr[1]))
   axis(2, labels = c("", ""), at = c(2*usr[3]-usr[4], max(resp) + 0.05 * auxRange), lwd.ticks = 0)
   axis(1, labels = xlab, at = mean(usr), line = 2, tick = FALSE)
-  if (drawXaxis) axis(1)
-  axis(2, labels = yaxis, at = yaxis, las = 2)
+  if (drawAxes) {
+    axis(1)
+    axis(2, labels = yaxis, at = yaxis, las = 2)
+  }
   axis(2, labels = 0:1, at = max(resp) + c(0.1, 0.25) * auxRange, las = 2)
   abline(h = max(resp) + 0.05 * auxRange, lwd = 3)
   abline(h = max(resp) + 0.1 * auxRange, lty = 2)
@@ -1372,16 +1374,18 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomS
 fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateValError = gaussian,
                           transResp = function(x) x, mcmcChains = 2, predictFull = FALSE){
   library(raster) # add to package libraries?
+  library(terra) # add to package libraries?
   # rasters checking - resolution, extent, projection
   checkFun <- function(resp, preds, fun) {
     all(vapply(preds, function(x, ref) identical(fun(x), ref),
                fun(resp), FUN.VALUE = FALSE))
   }
   if (!checkFun(resp, preds, res)) stop("Resolution of rasters has to be identical")
-  if (!checkFun(resp, preds, extent)) stop("Extent of rasters has to be identical")
+#  if (!checkFun(resp, preds, terra::ext)) stop("Extent of rasters has to be identical")
   if (!checkFun(resp, preds, projection)) stop("Projection of rasters has to be identical")
   # data preparation
-  dat <- data.frame(resp = transResp(getValues(resp)), lapply(preds, getValues))
+  dat <- data.frame(transResp(terra::values(resp)), lapply(preds, terra::values))
+  names(dat)[1] <- "resp"
   selID <- which(!apply(is.na(dat), 1, any))
   if (!is.null(subsample)) selID <- sample(selID, subsample)
   datSel <- dat[selID, ]
