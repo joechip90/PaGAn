@@ -1208,7 +1208,6 @@ findMin <- function(x, extremes = TRUE){
 #' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
 #' @param samples scalar specifying number of samples to be taken along predictor
 #' @param randomSample integer specifying how many random samples from posterior distribution to take instead of summary. Use \code{"NULL"} for summary.
-#' @param probDens logical value indicating if non-scaled probability density should be returned and plotted. Default is FALSE.
 #'
 #' @return Returns list of plotted values
 #'
@@ -1216,115 +1215,6 @@ findMin <- function(x, extremes = TRUE){
 #' @export
 #'
 sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
-                      setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
-                      plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1,
-                      samples = 1000, randomSample = NULL, probDens = FALSE){
-  resp <- mod$data[[1]]
-  parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL, randomSample = randomSample)
-  if (is.null(randomSample)) parsTab <- lapply(parsTab, function(x) x[, "mean", drop = FALSE])
-  svar <- labels(terms(form))
-  Nstates <- mod$constants$numStates
-  invlink <- switch(as.character(mod$linkFunction), identity = function(x) x, log = exp,
-                    logit = function(x) exp(x)/(1+exp(x)))
-  xx <- seq(min(resp), max(resp), length.out = samples)
-  if (addEcos) {
-    pred <- mod$constants[[svar]]
-    xx <- c(xx, resp[abs(pred - value) < ecosTol])
-  }
-  if (is.null(dim(value))) value <- matrix(value, length(value), dimnames = list(NULL, svar))
-  value <- as.matrix(value)
-  calcParsVal <- function(pars, value, mod){
-    getPars <- function(curState, pars, value){
-      pars <- as.matrix(pars)
-      auxExtract <- function(toGet, curState, pars, value){
-        pos <- match(paste0(c("intercept",colnames(value)), "_", toGet, "[", curState, "]"), rownames(pars))
-        pars[pos[1], 1] + as.vector(value %*% pars[pos[-1], 1])
-      }
-      est <- auxExtract("stateVal", curState, pars, value)
-      prec <- auxExtract("statePrec", curState, pars, value)
-      prob <- auxExtract("stateProb", curState, pars, value)
-      cbind(est = do.call(invlink, list(est)), sd = 1 / sqrt(exp(prec)), prob = prob)
-    }
-    parsVal <- vapply(1:Nstates, getPars, FUN.VALUE = array(0, dim = c(nrow(value), 3)), pars, value)
-    parsVal[, "prob", 1] <- rep(0, nrow(value))
-    parsVal[, "prob", ] <- exp(parsVal[, "prob", ]) / rowSums(exp(parsVal[, "prob", , drop = FALSE]))
-    rownames(parsVal) <- paste0("value", 1:nrow(value))
-    parsVal
-  }
-  calcDens <- function(parsVal){
-    aux <- parsVal[, "est", ]
-    auxDim <- c(nrow(value), Nstates, 2)
-    parsD <- switch(as.character(mod$errorModel),
-                    gaussian = array(c(parsVal[, "est", ], parsVal[, "sd", ]), dim = auxDim),
-                    gamma = array(c(aux^2/parsVal[, "sd", ]^2, aux/parsVal[, "sd", ]^2), dim = auxDim),
-                    beta = array(c(aux*(aux*(1-aux)/parsVal[, "sd", ]^2-1), (aux*(1-aux)/parsVal[, "sd", ]^2-1)*(1-aux)), dim = auxDim))
-    dfun <- switch(as.character(mod$errorModel),
-                   gaussian = dnorm,
-                   gamma = dgamma,
-                   beta = dbeta)
-    dens <- apply(parsD, 1, apply, 1, function(pars) do.call(dfun, list(xx, pars[1], pars[2])), simplify = FALSE)
-    dens <- Map(function(den, prob) den * rep(prob, each = nrow(den)), dens, data.frame(t(matrix(parsVal[, "prob", ], nrow = nrow(value)))))
-    dens <- lapply(dens, rowSums)
-    densSt <- if (probDens) dens else lapply(dens, function(x) x / max(x))
-    densSt
-  }
-  parsValList <- lapply(parsTab, apply, 2, calcParsVal, value, mod, simplify = FALSE)
-  densOut <- lapply(parsValList, lapply, calcDens)
-  plotSlice <- function(sliceDens){
-    lines(xx[1:samples], sliceDens[[1]][1:samples])
-    if (addEcos) points(tail(xx, -samples), tail(sliceDens[[1]], -samples), pch = 16)
-  }
-  if (doPlot) {
-    if (nrow(value) > 1) warning("Only the curve for the first value is plotted.")
-    yrange <- if (probDens) c(0, 1.05 * max(unlist(lapply(densOut, lapply, "[", 1)))) else c(1, 0)
-    plot(range(resp), yrange, type = "n", ylab = ifelse(probDens, "Probability density", "Potential energy"), xlab = xlab, ylim = yrange, axes = FALSE, yaxs = "i")
-    if (xaxis) axis(1)
-    if (probDens) axis(2, las = 2) else axis(2, labels = 0:5/5, at = 5:0/5, las = 2)
-    box(bty = "l")
-    lapply(densOut, lapply, plotSlice)
-
-    if (plotEst) {
-      plotEstFn <- function(parsVal){
-        rgbVec <- col2rgb(setCol)
-        cols <- rgb(rgbVec[1, ], rgbVec[2, ], rgbVec[3, ], alpha = 40 + parsVal[1, "prob", ] * 215, maxColorValue = 255)
-        abline(v = parsVal[1, "est", ], lty = 2, lwd = 3, col = cols)
-      }
-      lapply(parsValList, lapply, plotEstFn)
-    }
-
-  }
-  invisible(c(densOut, list(resp = xx)))
-}
-
-### 4.2. ==== Plot slice from Multinomial Ecosystem State Model ====
-#' @title Plot slice from Multinomial Ecosystem State Model
-#'
-#' @description This function plots probability density for given predictor value
-#'
-#' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "PaGAnmesm"
-#' @param value numeric vector of values of the preditor specified by
-#'   \code{"form"} where the slice is done or data.frame with values of predictors
-#'   in named columns
-#' @param byChains logical value indicating if slice should be done for each chain separately
-#' @param xlab string used as label for x-axis
-#' @param doPlot logical value indicating if plotting should be done
-#' @param setCol vector of colours to be used for visualization of estimated states
-#' @param plotEst logical value indicating if estimated states should be visualized
-#' @param xaxis logical value indicating if values should be marked on x-axis
-#' @param addEcos logical value indicating if ecosystems within \code{"ecosTol"} from \code{"value"} should be visualized on the line
-#' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
-#' @param samples scalar specifying number of samples to be taken along predictor
-#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of summary. Use \code{"NULL"} for summary.
-#'
-#' @return Returns list of plotted values
-#'
-#' @author Adam Klimes
-#' @export
-#'
-
-# NORM VERSION!!
-sliceMESMnorm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1,
                       samples = 1000, randomSample = NULL){
@@ -1360,26 +1250,26 @@ sliceMESMnorm <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPl
     rownames(parsVal) <- paste0("value", 1:nrow(value))
     parsVal
   }
-  densFun <- function(){
-    if (as.character(mod$errorModel) != "gaussian") stop("Only gaussian distribution implemented!")
+  makeDensFun <- function(){
+    dfun <- switch(as.character(mod$errorModel),
+                   gaussian = "dnorm",
+                   gamma = "dgamma",
+                   beta = "dbeta")
     i <- 1:Nstates
-    strFun <- paste0("(", paste(paste0("probs[", i, "] * dnorm(x, ", "means[", i, "], ", "sds[", i, "])"), collapse = " + "), ")/", Nstates)
-    # strFun <- paste0("rowSums(probs * simplify2array(.mapply(function(meanVal, sdVal) dnorm(x, meanVal, sdVal), list(means, sds), NULL)))/", Nstates)
-    argsList <- alist(x =, means =, sds =, probs =)
+    strFun <- paste0("(", paste(paste0("probs[", i, "] * ", dfun, "(x, ", "parOne[", i, "], ", "parTwo[", i, "])"), collapse = " + "), ")/", Nstates)
+    # strFun <- paste0("rowSums(probs * simplify2array(.mapply(function(meanVal, sdVal) dnorm(x, meanVal, sdVal), list(parOne, parTwo), NULL)))/", Nstates)
+    argsList <- alist(x =, parOne =, parTwo =, probs =)
     as.function(c(argsList, str2lang(strFun)))
   }
+  densFun <- makeDensFun()
   calcDens <- function(parsVal){
-    #aux <- parsVal[, "est", ]
-    #auxDim <- c(nrow(value), Nstates, 2)
-    #parsD <- switch(as.character(mod$errorModel),
-    #                gaussian = array(c(parsVal[, "est", ], parsVal[, "sd", ]), dim = auxDim),
-    #                gamma = array(c(aux^2/parsVal[, "sd", ]^2, aux/parsVal[, "sd", ]^2), dim = auxDim),
-    #                beta = array(c(aux*(aux*(1-aux)/parsVal[, "sd", ]^2-1), (aux*(1-aux)/parsVal[, "sd", ]^2-1)*(1-aux)), dim = auxDim))
-    #dfun <- switch(as.character(mod$errorModel),
-    #               gaussian = dnorm,
-    #               gamma = dgamma,
-    #               beta = dbeta)
-    apply(parsVal, 1, function(y) densFun()(xx, y["est", ], y["sd", ], y["prob", ]))
+    aux <- parsVal[, "est", ]
+    auxDim <- c(nrow(value), 3, Nstates)
+    parsD <- switch(as.character(mod$errorModel),
+                    gaussian = parsVal,
+                    gamma = array(rbind(aux^2/parsVal[, "sd", ]^2, aux/parsVal[, "sd", ]^2, parsVal[, "prob", ]), dim = auxDim),
+                    beta = array(rbind(aux*(aux*(1-aux)/parsVal[, "sd", ]^2-1), (aux*(1-aux)/parsVal[, "sd", ]^2-1)*(1-aux), parsVal[, "prob", ]), dim = auxDim))
+    apply(parsD, 1, function(y) densFun(xx, y[1, ], y[2, ], y[3, ]))
   }
   parsValList <- lapply(parsTab, apply, 2, calcParsVal, value, mod, simplify = FALSE)
   densOut <- lapply(parsValList, lapply, calcDens)
@@ -1434,59 +1324,10 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomS
   grad <- seq(min(pred), max(pred), length.out = 500)
   if (!is.null(otherPreds)){
     valueDF <- data.frame(grad, matrix(otherPreds, 1, length(otherPreds),
-      dimnames = list(NULL, names(otherPreds))))
-    colnames(valueDF)[1] <- svar
-  }  else valueDF <- grad
-  slices <- sliceMESM(form, mod, value = valueDF, byChains = FALSE, doPlot = FALSE, randomSample = randomSample)
-  mat <- lapply(slices[[1]], function(x) do.call(cbind, x))
-  mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
-  matPlot <- if (!is.null(randomSample)) apply(mats, 2, apply, 1, sd) else mat[[1]]
-  image(grad, slices$resp, t(matPlot), ...)
-  plotMinMax <- function(vals, xCoors, col, cex = 0.5) {
-    points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = cex, col = col)
-  }
-  if (addMinMax) {
-    maxs <- apply(mats, 3, function(y) apply(y, 2, findMin, extremes = FALSE, simplify = FALSE), simplify = FALSE)
-    mins <- apply(mats, 3, function(y) apply(y, 2, function(x) findMin(-x), simplify = FALSE), simplify = FALSE)
-    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = length(slices$resp))
-    cex <- if (!is.null(randomSample)) 0.1 else 0.5
-    lapply(maxs, function(x) Map(plotMinMax, x, grad, col = "red", cex = cex))
-    lapply(mins, function(x) Map(plotMinMax, x, grad, col = "blue", cex = cex))
-  }
-  if (addPoints) points(pred, resp, cex = 0.4, pch = 16)
-  invisible(mat)
-}
-
-### 4.3. ==== Probability landscape from Multinomial Ecosystem State Model ====
-#' @title Plot probability landscape from Multinomial Ecosystem State Model
-#'
-#' @description This function plots probability landscape for given predictor
-#'
-#' @param form formula with one predictor specifying which variables to plot
-#' @param mod an object of class "PaGAnmesm"
-#' @param addPoints logical value indicating if ecosystems should be visualized
-#' @param addMinMax logical value indicating if stable states and tipping points should be visualized
-#' @param randomSample integer specifying how many random samples from posterior distribution to take instead of mean. Use \code{"NULL"} for mean.
-#' @param otherPreds named vector of values of predictors not specified by form. Default are zeros
-#' @param ... parameters passed to image()
-#'
-#' @return Returns Probability density (scaled to [0,1]) matrix.
-#'
-#' @author Adam Klimes
-#' @export
-
-# NORM VERSION!
-landscapeMESMnorm <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomSample = NULL, otherPreds = NULL, ...){
-  svar <- labels(terms(form))
-  resp <- mod$data[[1]]
-  pred <- mod$constants[[svar]]
-  grad <- seq(min(pred), max(pred), length.out = 500)
-  if (!is.null(otherPreds)){
-    valueDF <- data.frame(grad, matrix(otherPreds, 1, length(otherPreds),
                                        dimnames = list(NULL, names(otherPreds))))
     colnames(valueDF)[1] <- svar
   }  else valueDF <- grad
-  slices <- sliceMESMnorm(form, mod, value = valueDF, byChains = FALSE, doPlot = FALSE, randomSample = randomSample)
+  slices <- sliceMESM(form, mod, value = valueDF, byChains = FALSE, doPlot = FALSE, randomSample = randomSample)
   mat <-  slices[[1]] #lapply(slices[[1]], function(x) do.call(cbind, x))
   mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
   matPlot <- if (!is.null(randomSample)) apply(mats, 2, apply, 1, sd) else mat[[1]]
