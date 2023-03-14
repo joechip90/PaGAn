@@ -1208,8 +1208,9 @@ findMin <- function(x, extremes = TRUE){
 #' @param ecosTol scalar specifying range of predictor from the \code{"value"} to select ecosystems to be visualized
 #' @param samples scalar specifying number of samples to be taken along predictor
 #' @param randomSample integer specifying how many random samples from posterior distribution to take instead of summary. Use \code{"NULL"} for summary.
+#' @param getParsD logical value indicating if the output should be parameters of distributions instead of the slice
 #'
-#' @return Returns list of plotted values
+#' @return Returns list of plotted values or parameter of distributions (if getParsD == TRUE)
 #'
 #' @author Adam Klimes
 #' @export
@@ -1217,7 +1218,7 @@ findMin <- function(x, extremes = TRUE){
 sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot = TRUE,
                       setCol = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e"),
                       plotEst = TRUE, xaxis = TRUE, addEcos = FALSE, ecosTol = 0.1,
-                      samples = 1000, randomSample = NULL){
+                      samples = 1000, randomSample = NULL, getParsD = FALSE){
   resp <- mod$data[[1]]
   parsTab <- summary(mod, byChains = byChains, absInt = TRUE, digit = NULL, randomSample = randomSample)
   if (is.null(randomSample)) parsTab <- lapply(parsTab, function(x) x[, "mean", drop = FALSE])
@@ -1262,17 +1263,18 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
     as.function(c(argsList, str2lang(strFun)))
   }
   densFun <- makeDensFun()
-  calcDens <- function(parsVal){
+  calcDens <- function(parsVal, getParsD = FALSE){
     aux <- parsVal[, "est", ]
     auxDim <- c(nrow(value), 3, Nstates)
     parsD <- switch(as.character(mod$errorModel),
                     gaussian = parsVal,
                     gamma = array(rbind(aux^2/parsVal[, "sd", ]^2, aux/parsVal[, "sd", ]^2, parsVal[, "prob", ]), dim = auxDim),
                     beta = array(rbind(aux*(aux*(1-aux)/parsVal[, "sd", ]^2-1), (aux*(1-aux)/parsVal[, "sd", ]^2-1)*(1-aux), parsVal[, "prob", ]), dim = auxDim))
-    apply(parsD, 1, function(y) densFun(xx, y[1, ], y[2, ], y[3, ]))
+    if (getParsD) parsD else apply(parsD, 1, function(y) densFun(xx, y[1, ], y[2, ], y[3, ]))
   }
   parsValList <- lapply(parsTab, apply, 2, calcParsVal, value, mod, simplify = FALSE)
-  densOut <- lapply(parsValList, lapply, calcDens)
+  densOut <- lapply(parsValList, lapply, calcDens, getParsD = getParsD)
+  if (getParsD) densOut <- list(densOut, densFun)
   plotSlice <- function(sliceDens){
     lines(xx[1:samples], sliceDens[1:samples])
     if (addEcos) points(tail(xx, -samples), tail(sliceDens, -samples), pch = 16)
@@ -1332,6 +1334,7 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomS
   mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
   matPlot <- if (!is.null(randomSample)) apply(mats, 2, apply, 1, sd) else mat[[1]]
   image(grad, slices$resp, t(matPlot), ...)
+  box()
   plotMinMax <- function(vals, xCoors, col, cex = 0.5) {
     points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = cex, col = col)
   }
@@ -1461,4 +1464,39 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   dToStateR <- raster(matrix(distToState, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   precarR <- raster(matrix(precar, nrow = dim(resp)[1], ncol = dim(resp)[2], byrow = TRUE), template = resp)
   out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
+}
+
+### 4.5. ==== Randomly generate from the model ====
+#' @title Randomly generate from the Multinomial Ecosystem State Model
+#'
+#' @description Random generation for the identified Multinomial Ecosystem State Model
+#'
+#' @param mod an object of class "PaGAnmesm"
+#' @param n number of observations per predictor value(s)
+#' @param newdata dataframe of predictor values of ecosystems to be predicted for.
+#'   If not provided, prediction is done for modelled data.
+#'
+#' @return ...
+#'
+#' @author Adam Klimes
+#' @export
+#'
+rMESM <- function(mod, n = 1, newdata = NULL){
+  respVal <- NULL
+  if (names(mod$data) %in% colnames(newdata)) {
+    respVal <- newdata[, names(mod$data)]
+    newdata <- newdata[, -which(colnames(newdata) == names(mod$data)), drop = FALSE]
+  }
+  if (is.null(newdata)) {
+    respVal <- mod$data[[1]]
+    newdata <- as.data.frame(mod$constants[-(1:3)])
+  }
+  form <- formula(paste("~", colnames(newdata)[1]))
+  slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, getParsD = TRUE)
+  Nstates <- mod$constants$numStates
+  sampleDist <- function(pars){
+    comp <- sample(1:Nstates, prob = pars["prob", ], size = n, replace = TRUE)
+    rnorm(n, pars[1, comp], pars[2, comp])
+  }
+  out <- t(as.data.frame(apply(slices[[1]][[1]][[1]], 1, sampleDist, simplify = FALSE)))
 }
