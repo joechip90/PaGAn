@@ -1023,6 +1023,7 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #'   If it contains column with response variable, obsDat is returned.
 #'   If not provided, prediction is done for modelled data.
 #' @param samples number of samples to take along the respons variable
+#' @param threshold number from 0 to 1 denoting how pronounced stable states should be marked as considerable
 #'
 #' @return A list containing the following components:
 #' \itemize{
@@ -1037,7 +1038,7 @@ summary.PaGAnmesm <- function(object, byChains = FALSE, digit = 4, absInt = FALS
 #' @author Adam Klimes
 #' @export
 #'
-predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
+predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000, threshold = 0.2){
   respVal <- NULL
   if (names(mod$data) %in% colnames(newdata)) {
     respVal <- newdata[, names(mod$data)]
@@ -1049,35 +1050,55 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000){
   }
   form <- formula(paste("~", colnames(newdata)[1]))
   slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
-  probCurve <- as.data.frame(slices[[1]][[1]])
+  scaleCurve <- function(x) (x - min(x)) / max((x - min(x)))
+  probCurve <- data.frame(apply(slices[[1]][[1]], 2, scaleCurve))
   names(probCurve) <- paste0("obs", seq_along(probCurve))
   resp <- slices$resp
-  getMin <- function(x, resp, extremes = TRUE) {
+  getMin <- function(x, resp, extremes = TRUE, inv = FALSE) {
     id <- findMin(x, extremes = extremes)
-    out <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
-    if (length(out) == 0) out <- NA
-    out
+    respOut <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
+    probDens <- x[id]
+    if (length(respOut) == 0) {
+      respOut <- NA
+      probDens <- NA
+    }
+    if (inv) probDens <- -probDens
+    data.frame(probDens = probDens, resp = respOut)
+  }
+  combStates <- function(tip, state, threshold){
+    comb <- rbind(cbind(tip, state = 0), cbind(state, state = 1))
+    combSort <- comb[order(comb$resp), ]
+    probDif <- abs(diff(combSort$probDens))
+    catDif <- (probDif > threshold) + 0
+    catSt <- c(1, catDif) * c(catDif, 1)
+    if (all(is.na(catSt))) catSt <- 1
+    cbind(combSort, catSt = catSt)
   }
   tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
-  stableStates <- lapply(-probCurve, getMin, resp)
+  stableStates <- lapply(-probCurve, getMin, resp, inv = TRUE)
+  tipStable <- Map(combStates, tipPoints, stableStates, threshold)
   auxFn <- function(x){
     dist <- abs(resp - x)
     which(dist == min(dist))
   }
   potentEn <- unlist(Map(function(x, y) -x[y]+1, probCurve, vapply(respVal, auxFn, FUN.VALUE = 1)))
   auxDist <- function(x, target) min(abs(x - target))
+  selState <- function(x, state = 1) {
+    out <- x$resp[x$state == state & x$catSt == 1]
+    if (length(out) == 0) out <- NA
+    out
+  }
   obsDat <- NULL
   if (!is.null(respVal)){
     obsDat <- data.frame(
       respVal = respVal,
       potentEn = potentEn,
-      distToTip = unlist(Map(auxDist, respVal, tipPoints)),
-      distToState = unlist(Map(auxDist, respVal, stableStates)))
+      distToTip = unlist(Map(auxDist, respVal, lapply(tipStable, selState, 0))),
+      distToState = unlist(Map(auxDist, respVal, lapply(tipStable, selState, 1))))
   }
   list(sampledResp = resp,
               probCurves = probCurve,
-              tipPoints = tipPoints,
-              stableStates = stableStates,
+              tipStable = tipStable,
               obsDat = obsDat)
 }
 
