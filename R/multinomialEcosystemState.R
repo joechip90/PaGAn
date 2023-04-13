@@ -1068,10 +1068,25 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000, threshold = 0
   combStates <- function(tip, state, threshold){
     comb <- rbind(cbind(tip, state = 0), cbind(state, state = 1))
     combSort <- comb[order(comb$resp), ]
-    probDif <- abs(diff(combSort$probDens))
-    catDif <- (probDif > threshold) + 0
-    catSt <- c(1, catDif) * c(catDif, 1)
-    if (all(is.na(catSt))) catSt <- 1
+    if (nrow(combSort) < 3) catSt <- 1 else {
+      dif <- (abs(diff(-combSort$probDens)) > threshold) + 0
+      groups <- lapply(0:sum(dif), function(x) which(x == c(0,cumsum(dif))))
+      sdf <- sign(diff(-combSort$probDens))
+      catDf <- -diff(c(-1, sdf[dif == 1], 1))/2
+      mins <- vapply(groups[catDf == -1], function(x) x[which(-combSort$probDens[x] == min(-combSort$probDens[x]))], FUN.VALUE = 1)
+      maxs <- vapply(groups[catDf == 1], function(x) x[which(-combSort$probDens[x] == max(-combSort$probDens[x]))], FUN.VALUE = 1)
+      auxChange <- function(x, signC) {
+        comp <- diff(-combSort$probDens[c(min(x)-1, max(x))])
+        if (length(comp) == 0) comp <- -1
+        if ((signC * comp) > 0) NULL else range(x)
+      }
+      addInc <- lapply(groups[catDf == 0 & c(-1, sdf[dif == 1]) == 1], auxChange, signC = 1)
+      addDec <- lapply(groups[catDf == 0 & c(-1, sdf[dif == 1]) == -1], auxChange, signC = -1)
+      minsAll <- sort(c(mins, unlist(lapply(addInc, "[", 2)), unlist(lapply(addDec, "[", 1))))
+      maxsAll <- sort(c(maxs, unlist(lapply(addInc, "[", 1)), unlist(lapply(addDec, "[", 2))))
+      catSt <- rep(0, nrow(combSort))
+      catSt[c(minsAll, maxsAll)] <- 1
+    }
     cbind(combSort, catSt = catSt)
   }
   tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
