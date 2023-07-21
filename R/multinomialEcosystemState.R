@@ -1050,48 +1050,10 @@ predict.PaGAnmesm <- function(mod, newdata = NULL, samples = 1000, threshold = 0
   }
   form <- formula(paste("~", colnames(newdata)[1]))
   slices <- sliceMESM(form, mod, value = newdata, byChains = FALSE, doPlot = FALSE, samples = samples)
-  scaleCurve <- function(x) (x - min(x)) / max((x - min(x)))
-  probCurve <- data.frame(apply(slices[[1]][[1]], 2, scaleCurve))
-  names(probCurve) <- paste0("obs", seq_along(probCurve))
+  tipStableAll <- getMinMax(slices, threshold)
+  tipStable <- tipStableAll$tipStable[[1]]
+  probCurve <- data.frame(tipStableAll$matsSt[[1]])
   resp <- slices$resp
-  getMin <- function(x, resp, extremes = TRUE, inv = FALSE) {
-    id <- findMin(x, extremes = extremes)
-    respOut <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
-    probDens <- x[id]
-    if (length(respOut) == 0) {
-      respOut <- NA
-      probDens <- NA
-    }
-    if (inv) probDens <- -probDens
-    data.frame(probDens = probDens, resp = respOut)
-  }
-  combStates <- function(tip, state, threshold){
-    comb <- rbind(cbind(tip, state = 0), cbind(state, state = 1))
-    combSort <- comb[order(comb$resp), ]
-    if (nrow(combSort) < 3) catSt <- 1 else {
-      dif <- (abs(diff(-combSort$probDens)) > threshold) + 0
-      groups <- lapply(0:sum(dif), function(x) which(x == c(0,cumsum(dif))))
-      sdf <- sign(diff(-combSort$probDens))
-      catDf <- -diff(c(-1, sdf[dif == 1], 1))/2
-      mins <- vapply(groups[catDf == -1], function(x) x[which(-combSort$probDens[x] == min(-combSort$probDens[x]))], FUN.VALUE = 1)
-      maxs <- vapply(groups[catDf == 1], function(x) x[which(-combSort$probDens[x] == max(-combSort$probDens[x]))], FUN.VALUE = 1)
-      auxChange <- function(x, signC) {
-        comp <- diff(-combSort$probDens[c(min(x)-1, max(x))])
-        if (length(comp) == 0) comp <- -1
-        if ((signC * comp) > 0) NULL else range(x)
-      }
-      addInc <- lapply(groups[catDf == 0 & c(-1, sdf[dif == 1]) == 1], auxChange, signC = 1)
-      addDec <- lapply(groups[catDf == 0 & c(-1, sdf[dif == 1]) == -1], auxChange, signC = -1)
-      minsAll <- sort(c(mins, unlist(lapply(addInc, "[", 2)), unlist(lapply(addDec, "[", 1))))
-      maxsAll <- sort(c(maxs, unlist(lapply(addInc, "[", 1)), unlist(lapply(addDec, "[", 2))))
-      catSt <- rep(0, nrow(combSort))
-      catSt[c(minsAll, maxsAll)] <- 1
-    }
-    cbind(combSort, catSt = catSt)
-  }
-  tipPoints <- lapply(probCurve, getMin, resp, extremes = FALSE)
-  stableStates <- lapply(-probCurve, getMin, resp, inv = TRUE)
-  tipStable <- Map(combStates, tipPoints, stableStates, threshold)
   auxFn <- function(x){
     dist <- abs(resp - x)
     which(dist == min(dist))
@@ -1224,7 +1186,80 @@ findMin <- function(x, extremes = TRUE){
   inLoc
 }
 
-### 4.2. ==== Plot slice from Multinomial Ecosystem State Model ====
+### 4.2. ==== Find local minima and maxima in Multinomial Ecosystem State Model ====
+#' @title Find local minima and maxima in Multinomial Ecosystem State Model
+#'
+#' @description Finds local minima and maxima in slices of stability landscape
+#'   from Multinomial Ecosystem State Model which represent multimodality over
+#'   specified threshold.
+#'
+#' @param slices slices of stability landscape from sliceMESM() function
+#' @param threshold numerical value specifying threshold for marking minima
+#'   and maxima. Marked maxima/minima differ in scaled probability density by
+#'   threshold value.
+#'
+#' @return A list containing the following components:
+#' \itemize{
+#' \item{\code{tipStable}}{A list of lists of dataframes with
+#'   tipping points (state == 0) and stable states (state == 1), categorized
+#'   based on satifying the threshold (catSt == 1), with their scaled [0-1]
+#'   probability density and response valiable value}
+#' \item{\code{mats}}{array of stability landscapes}
+#' \item{\code{matsSt}}{list of scaled stability landscapes}
+#'
+#' @author Adam Klimes
+#' @keywords internal
+#'
+getMinMax <- function(slices, threshold = 0.0){
+  getMin <- function(x, resp, extremes = TRUE, inv = FALSE) {
+    id <- findMin(x, extremes = extremes)
+    respOut <- resp[id] * (1 - id %% 1) + resp[min(id + 1, length(resp))] * id %% 1
+    probDens <- x[id]
+    if (length(respOut) == 0) {
+      respOut <- NA
+      probDens <- NA
+    }
+    if (inv) probDens <- -probDens
+    data.frame(probDens = probDens, resp = respOut)
+  }
+  combStates <- function(tip, state, threshold){
+    comb <- rbind(cbind(tip, state = 0), cbind(state, state = 1))
+    combSort <- comb[order(comb$resp), ]
+    if (nrow(combSort) < 3 | threshold == 0) catSt <- 1 else {
+      dif <- (abs(diff(-combSort$probDens)) > threshold) + 0
+      groups <- lapply(0:sum(dif), function(x) which(x == c(0,cumsum(dif))))
+      sdf <- sign(diff(-combSort$probDens))
+      catDf <- -diff(c(-1, sdf[dif == 1], 1))/2
+      mins <- vapply(groups[catDf == -1], function(x) x[which(-combSort$probDens[x] == min(-combSort$probDens[x]))], FUN.VALUE = 1)
+      maxs <- vapply(groups[catDf == 1], function(x) x[which(-combSort$probDens[x] == max(-combSort$probDens[x]))], FUN.VALUE = 1)
+      auxChange <- function(x, signC) {
+        comp <- diff(-combSort$probDens[c(min(x)-1, max(x))])
+        if (length(comp) == 0) comp <- -1
+        if ((signC * comp) > 0) NULL else range(x)
+      }
+      addInc <- lapply(groups[catDf == 0 & c(-1, sdf[dif == 1]) == 1], auxChange, signC = 1)
+      addDec <- lapply(groups[catDf == 0 & c(-1, sdf[dif == 1]) == -1], auxChange, signC = -1)
+      minsAll <- sort(c(mins, unlist(lapply(addInc, "[", 2)), unlist(lapply(addDec, "[", 1))))
+      maxsAll <- sort(c(maxs, unlist(lapply(addInc, "[", 1)), unlist(lapply(addDec, "[", 2))))
+      catSt <- rep(0, nrow(combSort))
+      catSt[c(minsAll, maxsAll)] <- 1
+    }
+    cbind(combSort, catSt = catSt)
+  }
+  mat <-  slices[[1]]
+  mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
+  scaleCurve <- function(x) (x - min(x)) / max((x - min(x)))
+  matsSt <- apply(mats, 3, function(x) apply(x, 2, scaleCurve), simplify = FALSE)
+  maxs <- lapply(matsSt, function(y) apply(y, 2, findMin, extremes = FALSE, simplify = FALSE))
+  mins <- lapply(matsSt, function(y) apply(y, 2, function(x) findMin(-x), simplify = FALSE))
+  tipPoints <- lapply(matsSt, function(y) apply(y, 2, getMin, slices$resp, extremes = FALSE))
+  stableStates <- lapply(matsSt, function(y) apply(-y, 2, getMin, slices$resp, inv = TRUE))
+  tipStable <- Map(Map, list(combStates), tipPoints, stableStates, threshold)
+  list(tipStable = tipStable, mats = mats, matsSt = matsSt)
+}
+
+
+### 4.3. ==== Plot slice from Multinomial Ecosystem State Model ====
 #' @title Plot slice from Multinomial Ecosystem State Model
 #'
 #' @description This function plots probability density for given predictor value
@@ -1337,25 +1372,28 @@ sliceMESM <- function(form, mod, value = 0, byChains = TRUE, xlab = "", doPlot =
   invisible(c(densOut, list(resp = xx)))
 }
 
-### 4.3. ==== Probability landscape from Multinomial Ecosystem State Model ====
+### 4.4. ==== Probability landscape from Multinomial Ecosystem State Model ====
 #' @title Plot probability landscape from Multinomial Ecosystem State Model
 #'
 #' @description This function plots probability landscape for given predictor
 #'
 #' @param form formula with one predictor specifying which variables to plot
 #' @param mod an object of class "PaGAnmesm"
+#' @param threshold numerical value denoting minimum relative
+#'   importance of visualized stable states and tipping points
 #' @param addPoints logical value indicating if ecosystems should be visualized
 #' @param addMinMax logical value indicating if stable states and tipping points should be visualized
 #' @param randomSample integer specifying how many random samples from posterior distribution to take instead of mean. Use \code{"NULL"} for mean.
 #' @param otherPreds named vector of values of predictors not specified by form. Default are zeros
+#' @param scaleDensity logical value indicating if probability density of each slice should be scaled to 0-1
 #' @param ... parameters passed to image()
 #'
-#' @return Returns Probability density (scaled to [0,1]) matrix.
+#' @return Returns List of probability density matrices.
 #'
 #' @author Adam Klimes
 #' @export
 #'
-landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomSample = NULL, otherPreds = NULL, ...){
+landscapeMESM <- function(form, mod, threshold = 0, addPoints = TRUE, addMinMax = TRUE, randomSample = NULL, otherPreds = NULL, scaleDensity = TRUE, ...){
   svar <- labels(terms(form))
   resp <- mod$data[[1]]
   pred <- mod$constants[[svar]]
@@ -1366,29 +1404,28 @@ landscapeMESM <- function(form, mod, addPoints = TRUE, addMinMax = TRUE, randomS
     colnames(valueDF)[1] <- svar
   }  else valueDF <- grad
   slices <- sliceMESM(form, mod, value = valueDF, byChains = FALSE, doPlot = FALSE, randomSample = randomSample)
-  mat <-  slices[[1]] #lapply(slices[[1]], function(x) do.call(cbind, x))
-  mats <- array(do.call(c, mat), dim = c(dim(mat[[1]]), length(mat)))
-  matPlot <- if (!is.null(randomSample)) apply(mats, 2, apply, 1, sd) else mat[[1]]
+  tipStableAll <- getMinMax(slices, threshold)
+  tipStable <- tipStableAll$tipStable
+  mats <- tipStableAll$mats
+  matPlot <- if (!is.null(randomSample)) apply(mats, 2, apply, 1, sd) else mats[, , 1]
+  if (scaleDensity) matPlot <- apply(matPlot, 2, function(x) (x - min(x)) / max(x - min(x)))
   image(grad, slices$resp, t(matPlot), ...)
   box()
-  plotMinMax <- function(vals, xCoors, col, cex = 0.5) {
-    points(rep(xCoors, length(vals)), yCoors[vals], pch = 16, cex = cex, col = col)
+  plotMinMax <- function(tipStable, xCoors, state, col, cex = 0.5){
+    selStates <- tipStable[tipStable$state == state & tipStable$catSt == 1, ]
+    points(rep(xCoors, nrow(selStates)), selStates$resp, pch = 16, cex = cex, col = col)
   }
   if (addMinMax) {
-    maxs <- apply(mats, 3, function(y) apply(y, 2, findMin, extremes = FALSE, simplify = FALSE), simplify = FALSE)
-    mins <- apply(mats, 3, function(y) apply(y, 2, function(x) findMin(-x), simplify = FALSE), simplify = FALSE)
-    yCoors <- seq(min(slices$resp), max(slices$resp), length.out = length(slices$resp))
-    cex <- if (!is.null(randomSample)) 0.1 else 0.5
-    lapply(maxs, function(x) Map(plotMinMax, x, grad, col = "red", cex = cex))
-    lapply(mins, function(x) Map(plotMinMax, x, grad, col = "blue", cex = cex))
+    cex <- if (is.null(randomSample)) 0.5 else 0.1
+    lapply(tipStable, function(x) Map(plotMinMax, x, grad, 0, col = "red", cex = cex))
+    lapply(tipStable, function(x) Map(plotMinMax, x, grad, 1, col = "blue", cex = cex))
   }
   if (addPoints) points(pred, resp, cex = 0.4, pch = 16)
-  invisible(mat)
+  invisible(mats)
 }
 
-
-### 4.4. ==== Fit Multinomial Ecosystem State Model using rasters ====
-#' @title Fit Multinomial Ecosystem State Model using rasters
+### 4.5. ==== Fit Multinomial Ecosystem State Model using rasters ====
+#' @title NOT UPDATED!! Fit Multinomial Ecosystem State Model using rasters
 #'
 #' @description Wrapper function to fit Multinomial Ecosystem State Model using
 #'raster layers and export results as rasters
@@ -1502,7 +1539,7 @@ fitRasterMESM <- function(resp, preds, subsample = NULL, numStates = 4, stateVal
   out <- list(mod = mod, modISt = modISt, dToStateR = dToStateR, precarR = precarR)
 }
 
-### 4.5. ==== Randomly generate from the model ====
+### 4.6. ==== Randomly generate from the model ====
 #' @title Randomly generate from the Multinomial Ecosystem State Model
 #'
 #' @description Random generation for the identified Multinomial Ecosystem State Model
