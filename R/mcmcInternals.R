@@ -1,24 +1,285 @@
-# Function that returns the error family distributions and the link functions that are available for each of them
+### 1.1 ==== Retrieve supported error distributions ====
+#' @title Error distributions supported in PaGAn
+#'
+#' @description \code{errorFamilies} is function that returns the families of error
+#' distributions supported natively in PaGAn's model processing routines
+#'
+#' @return A list object containing one named entry for each natively supported
+#' error distributions. Each named entry of the list is a character vector
+#' containing the valid link functions to use with the given error family
+#' @examples
+#' # Retrieve the names of the error distribution supported in PaGAn
+#' names(errorFamilies())
+#' # Retrieve the link functions that can be used with the "gaussian" error
+#' # family
+#' errorFamilies()[["gaussian"]]
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @export
 errorFamilies <- function() {
-  list(
-    gaussian = c("identity", "log"),
-    gamma = c("log"),
-    beta = c("logit", "probit", "cloglog"),
-    poisson = c("log"),
-    binomial = c("logit", "probit", "cloglog"),
-    negbinomial = c("log")
-  )
+  setNames(lapply(X = errorFamilies_raw, FUN = function(curErr) { curErr$link }), names(errorFamilies_raw))
 }
 
-mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, predictionNodeNames, inits, mcmcList = list(), numCores = 1, WAIC = TRUE) {
-  # Sanity check the MCMC parameters
-  inMCMCList <- sanityCheckMCMCParameters(mcmcList)
-  # Sanity check the number of cores
-  inNumCores <- tryCatch(as.integer(numCores), error = function(err) {
-    stop("error encountered during processing of the number of cores to use: ", err)
+### 1.2 ==== Sanity check for NIMBLE parameters ====
+#' @title Processing of NIMBLE parameters
+#'
+#' @description A function that creates a list of parameter values that are
+#' required for configuring, building and running the MCMC compiler for NIMBLE
+#' and chooses sensible defaults if they are not given
+#'
+#' @param ... Parameters to be passed to the constituent NIMBLE functions
+#' \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{runMCMC}},
+#' \code{\link[nimble]{nimbleModel}}, \code{\link[nimble]{compileNimble}}. The
+#' argument names will be matched to any relevant arguments in the constituent
+#' functions. If you wish to specify that an argument is to passed to a specific
+#' constitutent function then you can the name the argument with the form
+#' \code{function.argument}, where 'function' is replaced with the name of the
+#' relevant constituent function and 'argument' is replaced with the name of the
+#' argument
+#' @param warnNotFound A logical scalar denoting whether a warning should be
+#' given if an argument in the \code{...} parameters has not been found in the
+#' list of arguments in the constituent NIMBLE functions
+#'
+#' @return A \code{list} with named elements corresponding to each of the constituent
+#' NIMBLE functions.  Each of these elements is a \code{list} with named elements
+#' corresponding to each of the constituent function arguments and the unevaluated
+#' expression to be passed to those arguments
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{runMCMC}},
+#' \code{\link[nimble]{nimbleModel}}, \code{\link[nimble]{compileNimble}}
+#' @keywords internal
+nimbleParameters <- function(..., warnNotFound = FALSE) {
+  # Sanity check the warning parameter
+  inWarn <- tryCatch(as.logical(warnNotFound), error = function(err) {
+    warning("error encountered processing warning parameter so treating it as FALSE: ", err)
+    FALSE
   })
+  if(length(inWarn) <= 0) {
+    warning("warning parameter has zero length so treating it as FALSE")
+    inWarn <- FALSE
+  }
+  if(is.na(inWarn)) {
+    warning("warning parameter has NA value so treating it as FALSE")
+    inWarn <- FALSE
+  }
+  # Retrieve the nimble arguments
+  nimbleArgs <- list(
+    nimbleModel = formals(nimble::nimbleModel),
+    configureMCMC = formals(nimble::configureMCMC),
+    compileNimble = formals(nimble::compileNimble),
+    runMCMC = formals(nimble::runMCMC)
+  )
+  if(requireNamespace("INLA", quietly = TRUE)) {
+    # If the INLA package is installed then also retrieve the arguments of the inla function
+    nimbleArgs <- append(nimbleArgs, list(inla = formals(INLA::inla)))
+  }
+  # Retrieve the arguments provided to the function
+  # Doing this while avoiding the arguments being evaluated is weird (see here https://stackoverflow.com/questions/70602963/ellipsis-as-function-in-substitute)
+  inputArgs <- eval(substitute(alist(...)))
+  if(length(inputArgs) > 0) {
+    argNames <- names(inputArgs)
+    if(!is.null(argNames)) {
+      # Give the parameters some names based on their deparsed values if they don't already have one
+      names(argNames) <- sapply(X = inputArgs, FUN = function(curLang) { deparse1(curLang) })
+    }
+    # If the list has any elements that have the same names as the composite functions then
+    # format them so that are of the form "function." notation
+    argMatchesSpecifiedFunc <- argNames %in% names(nimbleArgs)
+    if(any(argMatchesSpecifiedFunc)) {
+      inputArgs <- c(inputArgs[!argMatchesSpecifiedFunc], do.call(c, lapply(X = names(nimbleArgs), FUN = function(curSubName, inputArgs) {
+        outList <- list()
+        if(curSubName %in% names(inputArgs)) {
+          outList <- inputArgs[[curSubName]]
+          # Retrieve the names for the elements
+          if(is.null(names(outList))) {
+            names(outList) <- paste(curSubName, sapply(X = outList, FUN = function(curLang) {
+              deparse1(curLang)
+            }), sep = ".")
+          } else {
+            names(outList) <- paste(curSubName, names(outList), sep = ".")
+          }
+        }
+        outList
+      }, inputArgs = inputArgs)))
+    }
+    # Determine which of the input arguments has the "function." notation
+    isSpecifiedFunc <- apply(X = sapply(X = names(nimbleArgs), FUN = function(curFunction, argNames) {
+      grepl(paste0("^", curFunction, "\\."), argNames, perl = TRUE)
+    }, argNames = argNames, simplify = "array"), MARGIN = 2, FUN = any)
+    if(any(isSpecifiedFunc)) {
+      # Go through each of the set of arguments for the function and find element specifically tailored for them through the "function." notation
+      nimbleArgs <- lapply(X = names(nimbleArgs), FUN = function(curFunction, inputArgs, nimbleArgs) {
+        # Initialise an output list with the default values
+        outList <- nimbleArgs[[curFunction]]
+        # Retrieve the argument names defined to be part of the currently applied function through the "function." notation
+        searchStr <- paste0("^", curFunction, "\\.")
+        curArgNames <- argNames[grepl(searchStr, names(inputArgs), perl = TRUE)]
+        if(length(curArgNames) > 0) {
+          # Copy those elements that already appear in the output list across from the input arguments
+          newArgNames <- gsub(searchStr, "", curArgNames)
+          isInOutList <- names(outList) %in% newArgNames
+          outList[isInOutList] <- inputArgs[curArgNames[isInOutList]]
+          if(any(!isInOutList)) {
+            # If there are any left over arguments not in the output list then add them to the end
+            outList <- append(outList, inputArgs[curArgNames[!isInOutList]])
+            if(!("..." %in% names(outList))) {
+              warning("extra arguments (", paste(curArgNames[!isInOutList], collapse = ", "), ") passed to a function (", curFunction, ") that does not include them in its ",
+                "function definition and for which there is no ... parameterisation")
+            }
+          }
+        }
+        if("..." %in% names(outList)) {
+          # Remove the ellipsis argument from the output list
+          outList <- outList[names(outList) != "..."]
+        }
+        outList
+      }, inputArgs = inputArgs[isSpecifiedFunc], nimbleArgs = nimbleArgs)
+    }
+    if(any(!isSpecifiedFunc)) {
+      # Process any arguments that do not have the "function." notation (and therefore may be used in multiple functions)
+      nimbleArgs <- lapply(X = nimbleArgs, FUN = function(curArgs, inputArgs) {
+        # Find which arguments that appear both in the provided arguments and the listed available arguments for the current function
+        sharedArgs <- names(curArgs)[names(curArgs) %in% names(inputArgs)]
+        outArgs <- curArgs
+        if(length(sharedArgs) > 0) {
+          # Copy those arguments across
+          outArgs[sharedArgs] <- inputArgs[sharedArgs]
+        }
+        outArgs
+      }, inputArgs = inputArgs[!isSpecifiedFunc])
+      if(inWarn) {
+        # Check to make sure that all given arguments are found in the constituent
+        # functions
+        isInFuncs <- sapply(X = names(inputArgs[!isSpecifiedFunc]), FUN = function(curInputArg, nimbleArgs) {
+          any(sapply(X = nimbleArgs, FUN = function(curNimble, curInputArg) {
+            curInputArg %in% names(curNimble)
+          }, curInputArg = curInputArg))
+        }, nimbleArgs = nimbleArgs)
+        if(any(!isInFuncs)) {
+          warning("some given arguments do not appear in NIMBLE constituent functions: ", paste(names(inputArgs[!isSpecifiedFunc])[!isInFuncs], collapse = " "))
+        }
+      }
+    }
+  }
+  # Remove any "..." parameters if they still exist in the output
+  setNames(lapply(X = nimbleArgs, FUN = function(curFunc) { curFunc[names(curFunc) != "..."] }), names(nimbleArgs))
+}
+
+### 1.3 ==== Run NIMBLE using specified arguments ====
+#' @title Run NIMBLE using the specified arguments
+#'
+#' @decription \code{mcmcNIMBLERun} provides a function to encapsulate an entire
+#' run of NIMBLE (including compilation steps) using a set of user-specified
+#' parameters
+#'
+#' @param ... Named arguments to be passed to the constituent NIMBLE functions
+#' \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{runMCMC}},
+#' \code{\link[nimble]{nimbleModel}}, and \code{\link[nimble]{compileNimble}}. The
+#' argument names will be matched to any relevant arguments in the constituent
+#' functions. If you wish to specify that an argument is to passed to a specific
+#' constitutent function then you can the name the argument with the form
+#' \code{function.argument}, where 'function' is replaced with the name of the
+#' relevant constituent function and 'argument' is replaced with the name of the
+#' argument
+#' @param mcCores An integer scalar giving the number of cores to distribute the
+#' chains between. A value of \code{NA} sets the number of cores to be equal to
+#' the number available on the system
+#'
+#' @return A list containing the following named elements:
+#' \itemize{
+#'  \item{\code{model}}{An uncompiled model object as returned by the function
+#'  \code{\link[nimble]{nimbleModel}} using the parameters supplied}
+#'  \item{\code{mcmc}}{An uncompiled MCMC object as returned by the function
+#'  \code{\link[nimble]{buildMCMC}} using the parameters supplied}
+#'  \item{\code{mcmcOutput}}{The output of the completed MCMC as returned by the
+#'  function \code{\link[nimble]{runMCMC}} using the parameters supplied}
+#' }
+#' @examples
+#' # Set some parameters for a linear regression
+#' slopeParam <- 0.6
+#' interceptParam <- 4.0
+#' varParam <- 2.0
+#' # A set of arguments to control the MCMC
+#' thin <- 1
+#' thin2 <- 2
+#' niter <- 10000
+#' nburnin <- 500
+#' nchains <- 4
+#' # Initialise some fake data
+#' xtest <- 1:100
+#' ytest <- rnorm(length(xtest), interceptParam + slopeParam * xtest, sqrt(varParam))
+#' # NIMBLE code to run the linear regression
+#' testCode <- nimble::nimbleCode({
+#'  slopeParam ~ dnorm(0.0, 0.001)
+#'  interceptParam ~ dnorm(0.0, 0.001)
+#'  varParam ~ dgamma(0.001, 0.001)
+#'  precParam <- 1.0 / varParam
+#'  for(iter in 1:length(xtest)) {
+#'    meanVals[iter] <- interceptParam + slopeParam * xtest[iter]
+#'    ytest[iter] ~ dnorm(meanVals[iter], precParam)
+#'  }
+#' })
+#' # Run the model using the parameters, data, and code defined above
+#' outputMCMC <- mcmcNIMBLERun(code = testCode, data = list(ytest = ytest),
+#'   constants = list(xtest = xtest), WAIC = TRUE, summary = TRUE,
+#'   inits = list(slopeParam = 0.0, interceptParam = 0.0, varParam = 10.0),
+#'   monitors = c("slopeParam", "interceptParam"), monitors2 = "varParam",
+#'   niter = niter, thin = thin, thin2 = thin2, nburnin = nburnin,
+#'   nchains = nchains)$mcmcOutput
+#' # Plot the results of the linear regression
+#' plot(xtest, ytest)
+#' abline(
+#'   a = outputMCMC$summary$all.chains["interceptParam", "Mean"],
+#'   b = outputMCMC$summary$all.chains["slopeParam", "Mean"]
+#' )
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{runMCMC}},
+#' \code{\link[nimble]{nimbleModel}}, \code{\link[nimble]{compileNimble}},
+#' \code{\link[nimble]{buildMCMC}},  \code{\link[nimble]{nimbleCode}}
+#' @export
+mcmcNIMBLERun <- function(..., mcCores = 1) {
+  ### 1.3.1 ---- Define single-run function ----
+  doNIMBLERun <- function(nimbleArgs, overrideWAIC = FALSE) {
+    # Create the model object
+    nimbleArgs$configureMCMC$conf <- do.call(nimble::nimbleModel, nimbleArgs$nimbleModel)
+    # Override the WAIC if needed (used in parallelized runs of NIMBLE)
+    if(overrideWAIC) {
+      extraVarsMonitor <- nimbleArgs$configureMCMC$conf$getParents(nimbleArgs$configureMCMC$conf$getNodeNames(dataOnly = TRUE), stochOnly = TRUE)
+      nimbleArgs$configureMCMC$monitors <- tryCatch(unique(as.character(nimbleArgs$configureMCMC$monitors), extraVarsMonitor), error = function(err) {
+        warning("error encountered when including all relevant nodes for WAIC calculation so processing with required list: ", err)
+        extraVarsMonitor
+      })
+    }
+    # Compile the model and MCMC
+    nimbleArgs$compileNimble <- c(list(
+      modelPaGAn = nimbleArgs$configureMCMC$conf,
+      # Configure the MCMC
+      mcmcPaGAn = do.call(nimble::buildMCMC, nimbleArgs$configureMCMC)
+    ), nimbleArgs$compileNimble)
+    # Compile the MCMC object
+    compiledList <- do.call(nimble::compileNimble, nimbleArgs$compileNimble)
+    nimbleArgs$runMCMC$mcmc <- compiledList[["mcmcPaGAn"]]
+    # Run the MCMC and return the output
+    list(
+      model = nimbleArgs$configureMCMC$conf,
+      mcmc = nimbleArgs$compileNimble$mcmcPaGAn,
+      mcmcOutput = do.call(nimble::runMCMC, nimbleArgs$runMCMC)
+    )
+  }
+  ### 1.3.2 ---- Sanity check the parameters ----
+  # Sanity check the number of cores
+  inNumCores <- 1
+  if(!is.null(inNumCores)) {
+    inNumCores <- tryCatch(as.integer(mcCores), error = function(err) {
+      warning("error encountered during processing of the number of cores to use so assuming 1 core use: ", err)
+    })
+  } else {
+    warning("error encountered during processing of the number of cores to use so assuming 1 core use: input is NULL")
+  }
   if(length(inNumCores) <= 0) {
-    stop("error encountered during processing of the number of cores to use: input vector has length 0")
+    warning("error encountered during processing of the number of cores to use so assuming 1 core use: input vector has length 0")
+    inNumCores <- 1
   } else if(length(inNumCores) > 1) {
     warning("length of vector specifying the number of cores to use is greater than one: only the first element will be used")
     inNumCores <- inNumCores[1]
@@ -26,56 +287,103 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
   if(is.na(inNumCores) || inNumCores <= 0) {
     # If the number of cores is NA or equal to less than zero then just set the number
     # of cores equal to the number present in the system
-    inNumCores <- future::availableCores()
+    inNumCores <- parallelly::availableCores()
   }
-  # Sanity check the WAIC inclusion criterion
-  inWAIC <- tryCatch(as.logical(WAIC), error = function(err) {
-    stop("error encountered during processing of the WAIC inclusion term: ", err)
-  })
-  if(length(inWAIC) <= 0) {
-    stop("error encountered during processing of the WAIC inclusion term: input vector has length 0")
-  } else if(length(inWAIC) > 1) {
-    warning("WAIC inclusion terms has a length greater than one: only the first element will be used")
-    inWAIC <- inWAIC[1]
-  }
-  if(is.na(inWAIC)) {
-    inWAIC <- FALSE
-  }
-  # Set the number of cores equal to the number of chains
-  inNumCores <- min(inNumCores, inMCMCList$numChains, future::availableCores())
-  # Initialise a set of output objects
-  mcmcOutput <- NULL
-  uncompiledModel <- NULL
-  compiledModel <- NULL
-  uncompiledMCMC <- NULL
-  compiledMCMC <- NULL
-  outList <- NULL
-  if(inNumCores <= 1) {
-    # Define the model object
-    uncompiledModel <- nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
-    # Compile the model object
-    compiledModel <- compileNimble(uncompiledModel)
-    # Create an MCMC object
-    uncompiledMCMC <- buildMCMC(uncompiledModel, enableWAIC = inWAIC, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = inMCMCList$thinDensity, thin2 = inMCMCList$predictThinDensity)
-    # Compile the MCMC object
-    compiledMCMC <- compileNimble(uncompiledMCMC, project = uncompiledModel)
-    # Run the MCMC
-    mcmcOutput <- runMCMC(compiledMCMC, niter = inMCMCList$numRuns + inMCMCList$numBurnIn, nburnin = inMCMCList$numBurnIn, nchains = inMCMCList$numChains, thin = inMCMCList$thinDensity, thin2 = inMCMCList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = inWAIC, summary = TRUE)
-    outList <- list(
-      uncompiledModel = uncompiledModel,
-      compiledModel = compiledModel,
-      uncompiledMCMC = uncompiledMCMC,
-      compiledMCMC = compiledMCMC,
-      mcmcOutput = mcmcOutput
-    )
+  # Process the nimble arguments
+  nimbleArgs <- do.call(nimbleParameters, append(substitute(alist(...)), list(warnNotFound = TRUE)))
+  # Retrieve the number of chains to be run
+  numChains <- 1
+  if(!is.null(nimbleArgs$runMCMC$nchains)) {
+    numChains <- tryCatch(as.integer(nimbleArgs$runMCMC$nchains), error = function(err) {
+      warning("error encountered when processing the number of chains so assuming 1 chain: ", err)
+      1
+    })
   } else {
-    # Create a series of log files to store the process output
+    warning("number of chains argument has NULL value so assuming 1 chain")
+  }
+  if(length(numChains) <= 0) {
+    warning("number of chains argument has zero length so assuming 1 chain")
+    numChains <- 1
+  } else if(length(numChains) > 1) {
+    warning("number of chains argument has length greater than one: only the first element will be used")
+    numChains <- numChains[1]
+  }
+  if(is.na(numChains) || numChains <= 0) {
+    warning("invalid value given for the number of chains so assuming 1 chain")
+    numChains <- 1
+  }
+  nimbleArgs$runMCMC$nchains <- numChains
+  outValue <- NULL
+  if(inNumCores == 1 || numChains == 1) {
+    ### 1.3.3 ---- Run the single-core version of the function ----
+    # If there is either one core or one chain then there is no benefit to distributing the
+    # chains across multiple processes
+    outValue <- doNIMBLERun(nimbleArgs, FALSE)
+  } else {
+    ### 1.3.4 ---- Run the multi-core version of the function ----
+    if(!requireNamespace(future, quietly = TRUE)) {
+      stop("parallelisation of NIMBLE requires the 'future' package")
+    }
+    # Distribute the chains among the different cores
+    chainVec <- table(0:(numChains - 1) %% inNumCores)
+    # Reduce the number of cores required if there are fewer chains than cores
+    chainVec <- chainVec[chainVec > 0]
+    inNumCores <- length(chainVec)
+    # Create a series of log-files to store the run outputs
     logFiles <- replicate(inNumCores, tempfile())
-    # Create a function to run chains across multiple cores
-    parallelRun <- function(procNum, modelCode, data, constants, paramNodeNames, predictionNodeNames, inits, mcmcList, WAIC, logFiles, chainVec) {
+    # Check to see if WAIC information is requested. If so, inform the user that
+    # only offline methods can be used
+    useWAIC <- tryCatch(as.logical(nimbleArgs$configureMCMC$enableWAIC) || as.logical(nimbleArgs$runMCMC$WAIC), error = function(err) {
+      warning("error encountered with WAIC settings configuration so default settings used instead: ", err)
+      nimble::getNimbleOption("MCMCenableWAIC")
+    })
+    WAICburnIn <- tryCatch(as.integer(nimbleArgs$configureMCMC$controlWAIC$nburnin_extra), error = function(err) {
+      warning("error encountered with WAIC settings configuration so default settings used instead: ", err)
+      formals(nimble::calculateWAIC)$nburnin
+    })
+    WAICthin <- tryCatch(as.integer(nimbleArgs$configureMCMC$controlWAIC$thin), error = function(err) {
+      warning("error encountered with WAIC settings configuration so default settings used instead: ", err)
+      formals(nimble::calculateWAIC)$thin
+    })
+    if(length(WAICburnIn) <= 0) {
+      WAICburnIn <- formals(nimble::calculateWAIC)$nburnin
+    }
+    if(length(WAICthin) <= 0) {
+      WAICthin <- formals(nimble::calculateWAIC)$thin
+    }
+    if(useWAIC) {
+      message("it is only possible to calculate WAIC using offline methods when running NIMBLE ",
+        "using parallel processes and so extra monitor nodes may need to be created in order ",
+        "to do this. PaGAn will generate these automatically.  See ",
+        "https://r-nimble.org/nimbleExamples/parallelizing_NIMBLE.html for more ",
+        "information for why this is the case")
+    }
+    # Retrieve whether the user requires samples and/or summary information from the MCMC object
+    requiresSamples <- tryCatch(as.logical(nimbleArgs$runMCMC$samples), error = function(err) {
+      warning("error encountered when processing argument denoting whether to store samples so assuming default values intead: ", err)
+      formals(nimble::runMCMC)$samples
+    })
+    requiresSummary <- tryCatch(as.logical(nimbleArgs$runMCMC$summary), error = function(err) {
+      warning("error encountered when processing argument denoting whether to produce summary information so assuming default values instead: ", err)
+      formals(nimble::runMCMC)$summary
+    })
+    nimbleArgs$runMCMC$summary <- FALSE
+    nimbleArgs$runMCMC$samples <- TRUE
+    # Check to see if the output samples are to distributed as CODA objects
+    samplesAsCoda <- tryCatch(as.logical(nimbleArgs$runMCMC$samplesAsCodaMCMC), error = function(err) {
+      warning("error encountered when procesing sample storage type parameter so assuming default settings instead: ", err)
+      formals(nimble::runMCMC)$samplesAsCodaMCMC
+    })
+    nimbleArgs$runMCMC$samplesAsCodaMCMC <- FALSE
+    nimbleArgs$configureMCMC$enableWAIC <- FALSE
+    nimbleArgs$configureMCMC$controlWAIC <- list()
+    nimbleArgs$runMCMC$WAIC <- FALSE
+    # Create a function that runs MCMC chains for each core
+    parallelRun <- function(procNum, nimbleArgs, logFiles, chainVec, useWAIC) {
+      message("Process ", procNum, " initialising for ", chainVec[procNum], " chains with output stored in log file located at ", logFiles[procNum], "...")
       future::future({
-        outObject <- NULL
-        # Redirect the output and messages to a log file
+        # Redirect the output and messages to a log file for the duration that this
+        # future is running
         outConnec <- file(logFiles[procNum], open = "a+")
         sink(outConnec, append = TRUE, type = "output")
         sink(outConnec, append = TRUE, type = "message")
@@ -84,47 +392,17 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
           sink(type = "message")
           close(outConnec)
         })
-        # Define the model object
-        cat("Defining model object...\n")
-        uncompiledModel <- nimble::nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
-        # Compile the model object
-        cat("Compiling model...\n")
-        compiledModel <- nimble::compileNimble(uncompiledModel)
-        # Create an MCMC object
-        cat("Creating MCMC object...\n")
-        uncompiledMCMC <- nimble::buildMCMC(uncompiledModel, enableWAIC = TRUE, monitors = paramNodeNames, monitors2 = predictionNodeNames, thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity)
-        # Compile the MCMC object
-        cat("Compiling MCMC object...\n")
-        compiledMCMC <- nimble::compileNimble(uncompiledMCMC, project = uncompiledModel)
-        # Run the MCMC
-        cat("Running MCMC...\n")
-        mcmcOutput <- nimble::runMCMC(compiledMCMC, niter = mcmcList$numRuns + mcmcList$numBurnIn, nburnin = mcmcList$numBurnIn, nchains = chainVec[procNum], thin = mcmcList$thinDensity, thin2 = mcmcList$predictThinDensity, samplesAsCodaMCMC = TRUE, WAIC = FALSE, summary = TRUE)
-        # Print the process complete text
-        cat("Process complete\n")
-        # Create an output object
-        outObject <- list(
-          uncompiledModel = uncompiledModel,
-          compiledModel = compiledModel,
-          uncompiledMCMC = uncompiledMCMC,
-          compiledMCMC = compiledMCMC,
-          mcmcOutput = mcmcOutput
-        )
-        outObject
-      }, packages = c("nimble", "coda"), seed = TRUE, earlySignal = TRUE, conditions = structure("condition", exclude = "message"), globals = list(
-        procNum = procNum, modelCode = modelCode, data = data, constants = constants, paramNodeNames = paramNodeNames, predictionNodeNames = predictionNodeNames,
-        inits = inits, mcmcList = mcmcList, WAIC = WAIC, logFiles = logFiles, chainVec = chainVec)
-      )
+        # Adjust the NIMBLE arguments for the parallelisation
+        curNimbleArgs <- nimbleArgs
+        curNimbleArgs$runMCMC$nchains <- chainVec[procNum]
+        # Run NIMBLE using the current arguments
+        doNIMBLERun(curNimbleArgs, useWAIC)
+      }, packages = c("nimble", "coda"), seed = TRUE, earlySignal = TRUE, conditions = structure("condition", exclude = "message"),
+        globals = list(logFiles = logFiles, chainVec = chainVec, nimbleArgs = nimbleArgs, procNum = procNum, useWAIC = useWAIC, doNIMBLERun = doNIMBLERun))
     }
-    # Calculate a balancer to distribute the chains between cores
-    chainVec <- rep(ceiling(inMCMCList$numChains / inNumCores), inNumCores)
-    overCount <- sum(chainVec) - inMCMCList$numChains
-    if(overCount != 0) {
-      chainVec[1:overCount] <- chainVec[1:overCount] + ifelse(overCount > 0, -1, 1)
-    }
-    # Call the model with the chains distributed across the cores
-    parallelOutputs <- lapply(X = 1:inNumCores, FUN = parallelRun,
-      modelCode = modelCode, data = data, constants = constants, paramNodeNames = paramNodeNames, predictionNodeNames = predictionNodeNames,
-      inits = inits, mcmcList = inMCMCList, WAIC = inWAIC, logFiles = logFiles, chainVec = chainVec)
+    # Call the MCMC with the chains distributed across the cores
+    parallelOutputs <- lapply(X = 1:inNumCores, FUN = parallelRun, nimbleArgs = nimbleArgs, logFiles = logFiles, chainVec = chainVec, useWAIC = useWAIC)
+    # Report the progress of the chains to the user
     outText <- ""
     beginTime <- Sys.time()
     # Function to produce a status report on the processes
@@ -149,137 +427,197 @@ mcmcNIMBLERun <- function(modelCode, data, constants, paramNodeNames, prediction
       logText <- statusReport(logFiles, beginTime)
       cat(logText)
       flush.console()
-      # Sleep for 2 minutes before querying whether the processes are complete again
-      Sys.sleep(120)
+      # Sleep for a minute before querying whether the processes are complete again
+      Sys.sleep(60)
     }
     logText <- statusReport(logFiles, beginTime)
-    cat(logText)
-    cat("\n\nAll processes complete\n")
+    cat(logText, "\n\nAll processes complete\n")
     flush.console()
     # Retrieve the values from the future evaluations
     parallelOutputs <- lapply(X = parallelOutputs, FUN = future::value)
-    # Stitch together the outputs from the parallel processes
-    uncompiledModel <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$uncompiledModel })
-    compiledModel <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$compiledModel })
-    uncompiledMCMC <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$uncompiledMCMC })
-    compiledMCMC <- lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) { curOb$compiledMCMC })
-    # Create amalgamated coda objects from the runs spread across the processes
-    mcmcOutput <- list(
-      samples = coda::mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) {
-        curOut <- curOb$mcmcOutput$samples
-        if("mcmc" %in% class(curOut)) {
-          curOut <- coda::mcmc.list(curOut)
+    # Stitch together the parallel outputs
+    stitchedSamples <- do.call(c, lapply(X = parallelOutputs, FUN = function(curOutput) {
+      # Retrieve the current MCMC output
+      curMCMC <- curOutput$mcmcOutput
+      if(!is.list(curMCMC)) {
+        # Output is not a list which means only one chain was run by this process
+        curMCMC <- list(chain1 = curMCMC)
+      } else if("samples" %in% names(curMCMC)) {
+        # Output has a second set of monitors so main samples are stored in the 'samples' element
+        curMCMC <- curMCMC$samples
+        if(!is.list(curMCMC)) {
+          curMCMC <- list(chain1 = curMCMC)
         }
-        curOut
-      })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
-      samples2 = coda::mcmc.list(setNames(do.call(c, lapply(X = parallelOutputs[1:inNumCores], FUN = function(curOb) {
-        curOut <- curOb$mcmcOutput$samples2
-        if("mcmc" %in% class(curOut)) {
-          curOut <- coda::mcmc.list(curOut)
+      }
+      curMCMC
+    }))
+    names(stitchedSamples) <- paste0("chain", 1:length(stitchedSamples))
+    # Stitch together the parallel outputs in the situation where 'monitor2' has been used
+    stitchedSamplesTwo <- do.call(c, lapply(X = parallelOutputs, FUN = function(curOutput) {
+      # Retrieve the current MCMC output
+      curMCMC <- list()
+      if("samples2" %in% names(curOutput$mcmcOutput)) {
+        curMCMC <- curMCMC$samples2
+        if(!is.list(curMCMC)) {
+          curMCMC <- list(chain1 = curMCMC)
         }
-        curOut
-      })), paste("chain", 1:inMCMCList$numChains, sep = ""))),
-      summary = NULL, WAIC = NULL
-    )
-    # Recreate the summary information for the samples across the chains
-    mcmcOutput$summary <- setNames(c(lapply(X = 1:inMCMCList$numChains, FUN = function(inIndex, samplesList, samplesTwoList) {
-      rbind(nimble::samplesSummary(as.matrix(samplesList[[inIndex]])), nimble::samplesSummary(as.matrix(samplesTwoList[[inIndex]])))
-    }, samplesList = mcmcOutput$samples, samplesTwoList = mcmcOutput$samples2), list(rbind(
-      nimble::samplesSummary(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix))),
-      nimble::samplesSummary(do.call(rbind, lapply(X = mcmcOutput$samples2, FUN = as.matrix)))
-    ))), c(paste("chain", 1:inMCMCList$numChains, sep = ""), "all.chains"))
-    if(inWAIC) {
+      }
+      curMCMC
+    }))
+    names(stitchedSamplesTwo) <- paste0("chain", 1:length(stitchedSamplesTwo))
+    hasMonitorTwo <- any(sapply(X = stitchedSamplesTwo, FUN = function(curSample) { length(curSample) > 0 }))
+    # Update the output object with the samples
+    mcmcOutput <- list()
+    if(requiresSamples) {
+      mcmcOutput <- c(mcmcOutput, list(samples = stitchedSamples))
+      if(hasMonitorTwo) {
+        mcmcOutput <- c(mcmcOutputs, list(samples2 = stitchedSamplesTwo))
+      }
+    }
+    if(requiresSummary) {
+      # Make new summary tables if they are requested
+      summaryObject <- lapply(stitchedSamples, nimble::samplesSummary)
+      names(summaryObject) <- paste0("chain", 1:length(summaryObject))
+      summaryObject <- c(summaryObject, list(
+        all.chains = nimble::samplesSummary(do.call(rbind, stitchedSamples))
+      ))
+      # Add the summaries for the monitor2 variables (if they exist)
+      if(hasMonitorTwo) {
+        summaryObjectTwo <- lapply(stitchedSamplesTwo, nimble::samplesSummary)
+        names(summaryObjectTwo) <- paste0("chain", 1:length(summaryObjectTwo))
+        summaryObjectTwo <- c(summaryObjectTwo, list(
+          all.chains = nimble::samplesSummary(do.call(rbind, stitchedSamplesTwo))
+        ))
+        # Combine the summaries
+        summaryObject <- mapply(rbind, summaryObject, summaryObjectTwo, SIMPLIFY = FALSE)
+      }
+      mcmcOutput <- c(mcmcOutput, list(summary = summaryObject))
+    }
+    if(useWAIC) {
       # Calculate the WAIC using all the samples spread across the processes
       # For some reason using the previously compiled or uncompiled model in the calculateWAIC function causes
       # R to crash so we recompile the model here just for the WAIC calculation.  This is not super efficient
       # and will probably need to be improved later on
-      cat("Recompiling model for WAIC calculation...\n")
-      tempModel <- nimble::nimbleModel(modelCode, constants = constants, data = data, inits = inits, calculate = TRUE)
-      tempCModel <- nimble::compileNimble(tempModel)
-      tempMCMC <- nimble::buildMCMC(tempModel, enableWAIC = TRUE, monitors = paramNodeNames, thin = inMCMCList$thinDensity)
-      tempCMCMC <- nimble::compileNimble(tempMCMC, project = tempModel)
-      mcmcOutput$WAIC <- nimble::calculateWAIC(do.call(rbind, lapply(X = mcmcOutput$samples, FUN = as.matrix)), model = tempModel)
+      cat("Recompiling model for offline WAIC calculation...\n")
+      tempModel <- do.call(nimble::nimbleModel, nimbleArgs$nimbleModel)
+      nimbleArgs$compileNimble <- c(list(modelPaGAn = tempModel), nimbleArgs$compileNimble)
+      tempCModel <- do.call(nimble::compileNimble, nimbleArgs$compileNimble)
+      mcmcOutput <- c(mcmcOutput, list(WAIC = nimble::calculateWAIC(
+        mcmc = do.call(rbind, stitchedSamples), model = tempModel, nburnin = WAICburnIn, thin = WAICthin)))
     }
-    outList <- list(
-      uncompiledModel = uncompiledModel,
-      compiledModel = compiledModel,
-      uncompiledMCMC = uncompiledMCMC,
-      compiledMCMC = compiledMCMC,
-      mcmcOutput = mcmcOutput
-    )
+    # If the user wants the outputs in CODA format then convert the samples accordingly
+    if(samplesAsCoda) {
+      if(requiresSamples) {
+        mcmcOutput$samples <- coda::as.mcmc.list(lapply(mcmcOutput$samples, coda::as.mcmc))
+        if(hasMonitorTwo) {
+          mcmcOutput$samples2 <- coda::as.mcmc.list(lapply(mcmcOutput$samples2, coda::as.mcmc))
+        }
+      }
+    }
+    # If the output has only one element in it then just remove one level of the list
+    # (this mimics NIMBLE's output)
+    if(length(mcmcOutput) == 1) {
+      mcmcOutput <- mcmcOutput[[1]]
+    }
+    outValue <- parallelOutputs[[1]]
+    outValue$mcmcOutput <- mcmcOutput
   }
-  outList
+  outValue
 }
 
-sanityCheckMCMCParameters <- function(inputList) {
-  # Default MCMC sampling parameters
-  mcmcList <- list(
-    numRuns = 10000,
-    numChains = 4,
-    numBurnIn = 5000,
-    thinDensity = 1,
-    predictThinDensity = 1
-  )
-  # Sanity check the MCMC list
-  tempList <- tryCatch(as.list(inputList), error = function(err) {
-    stop("error encountered during processing of MCMC control parameter list: ", err)
+### 1.5 ==== Ensure That a Variable Name is BUGS-Friendly ====
+#' @title Ensure That a Variable Name is BUGS-Compliant
+#'
+#' @description R is quite permissive with variables names and not all variable
+#' names allowed by R will result in functioning BUGS code. NIMBLE uses a dialect
+#' of BUGS and so this function will automatically convert variables names such
+#' that they can be interpreted correctly
+#'
+#' @param inNames A character vector of variable names to ensure are
+#' BUGS-compliant
+#' @param warnType A character scalar denoting whether to produce feedback to
+#' the user if the variable names provided in \code{inNames} are non-compliant.
+#' \code{"message"}, \code{"warning"}, or \code{"error"} gives a message,
+#' warning, or error respectively. All other values for \code{warnType} result
+#' in no feedback being given to the user
+#'
+#' @return A character vector of BUGS-compliant variable names
+#' @examples
+#' # A mixture of variable names
+#' inputNames <- c(
+#'   "aGoodVariableName1", "aGoodVariableName2", # Compliant names
+#'   "1aBadVariableName", "aBadVariableName{2}"  # Non-compliant names
+#' )
+#' outputNames <- makeBUGSFriendlyNames(inputNames, "message")
+#' # Output names now contains compliant conversions of the non-compliant names
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}}
+#' @export
+makeBUGSFriendlyNames <- function(inNames, warnType = NA) {
+  # Sanity-check the feedback parameter
+  inWarn <- tryCatch(as.character(warnType), error = function(err) {
+    as.character(NA)
   })
-  mcmcList[names(tempList)[names(tempList) %in% names(mcmcList)]] <- tempList
-  # Check to ensure the number of numRuns entry is present and correct
-  mcmcList$numRuns <- tryCatch(as.integer(mcmcList$numRuns)[1], error = function(err) {
-    stop("error encountered during processing of MCMC control parameter (numRuns): ", err)
-  })
-  if(is.na(mcmcList$numRuns) || mcmcList$numRuns <= 0) {
-    stop("error encountered during processing of MCMC control parameter (numRuns): must be an integer value greater than zero")
+  if(length(inWarn) <= 0) {
+    inWarn <- as.character(NA)
+  } else if(length(inWarn) > 1) {
+    warning("user-feedback argument length greater than one: only the first element will be used")
+    inWarn <- inWarn[1]
   }
-  # Check to ensure the number of numChains entry is present and correct
-  mcmcList$numChains <- tryCatch(as.integer(mcmcList$numChains)[1], error = function(err) {
-    stop("error encountered during processing of MCMC control parameter (numChains): ", err)
-  })
-  if(is.na(mcmcList$numChains) || mcmcList$numChains <= 0) {
-    stop("error encountered during processing of MCMC control parameter (numChains): must be an integer value greater than zero")
-  }
-  # Check to ensure the number of "burn-in" samples entry is present and correct
-  mcmcList$numBurnIn <- tryCatch(as.integer(mcmcList$numBurnIn)[1], error = function(err) {
-    stop("error encountered during processing of MCMC control parameter (numBurnIn): ", err)
-  })
-  if(is.na(mcmcList$numBurnIn) || mcmcList$numBurnIn < 0) {
-    stop("error encountered during processing of MCMC control parameter (numBurnIn): must be an integer value greater than zero")
-  }
-  # Check to ensure the thinning parameter is present and correct
-  mcmcList$thinDensity <- tryCatch(as.integer(mcmcList$thinDensity)[1], error = function(err) {
-    stop("error encountered during processing of MCMC control parameter (thinDensity): ", err)
-  })
-  if(is.na(mcmcList$thinDensity) || mcmcList$thinDensity <= 0) {
-    stop("error encountered during processing of MCMC control parameter (thinDensity): must be an integer value greater than zero")
-  }
-  # Check to ensure the other thinning parameter is present and correct
-  mcmcList$predictThinDensity <- tryCatch(as.integer(mcmcList$predictThinDensity)[1], error = function(err) {
-    stop("error encountered during processing of MCMC control parameter (predictThinDensity): ", err)
-  })
-  if(is.na(mcmcList$predictThinDensity) || mcmcList$predictThinDensity <= 0) {
-    stop("error encountered during processing of MCMC control parameter (predictThinDensity): must be an integer value greater than zero")
-  }
-  mcmcList
-}
-
-# Function to ensure that the variable names are valid for BUGS-style model specification
-makeBUGSFriendlyNames <- function(inNames) {
-  # Remove non-allowed characters from the names
-  outNames <- tryCatch(gsub("\\W", "_", as.character(inNames), perl = TRUE), error = function(err) {
+  # Sanity-check the input names
+  outNames <- tryCatch(as.character(inNames), error = function(err) {
     stop("error encountered during processing of input variable names: ", err)
   })
-  # Ensure the names does not start with a numeric character
-  outNames <- paste(ifelse(
-    grepl("^\\d+", outNames, perl = TRUE), "n", ""
-  ), outNames, sep = "")
+  tempNames <- outNames
+  if(length(outNames) > 0) {
+    # Replace some common operators that appear in variable names
+    outNames <- gsub("+", "plus", outNames, fixed = TRUE)
+    outNames <- gsub("-", "minus", outNames, fixed = TRUE)
+    outNames <- gsub("*", "mult", outNames, fixed = TRUE)
+    outNames <- gsub("/", "div", outNames, fixed = TRUE)
+    outNames <- gsub("^", "pow", outNames, fixed = TRUE)
+    # Remove non-allowed characters from the names
+    outNames <- gsub("\\W", "_", outNames, perl = TRUE)
+    # Remove any leading underscores
+    outNames <- gsub("^_+", "", outNames, perl = TRUE)
+    # Ensure the names does not start with a numeric character
+    outNames <- paste(ifelse(
+      grepl("^\\d+", outNames, perl = TRUE), "n", ""
+    ), outNames, sep = "")
+    # Provide the requested feedback to the user
+    areNotSame <- outNames != tempNames
+    if(any(areNotSame) && !is.na(inWarn)) {
+      msgOut <- paste(
+        "the following variables are not valid for use in nimble code:",
+        paste(tempNames[areNotSame], " (changed to ", outNames[areNotSame], ")", collapse = ", ", sep = ""), sep = " ")
+      msgFunc <- switch(inwarn,
+        message = message, warning = warning, error = stop)
+      if(!is.null(msgFunc)) {
+        do.call(msgFunc, list(msgOut))
+      }
+    }
+  }
   outNames
 }
 
+### 1.6 ==== Process a Model Suffix ====
+#' @title Process a Model Suffix
+#'
+#' @description Sanity check a model suffix and convert it so that it is
+#' compliant with BUGS
+#'
+#' @param modelSuffix A character scalar containing the model suffix to process
+#'
+#' @return A compliant model suffix
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}}
+#' @keywords internal
 processSuffix <- function(modelSuffix = "") {
   inSuffix <- ""
   if(!is.null(modelSuffix)) {
-    inSuffix <- tryCatch(makeBUGSFriendlyNames(as.character(modelSuffix)), error = function(err) {
+    inSuffix <- tryCatch(makeBUGSFriendlyNames(as.character(modelSuffix), "warning"), error = function(err) {
       stop("error encountered during processing of model suffix: ", err)
     })
     if(length(inSuffix) == 0) {
@@ -297,586 +635,376 @@ processSuffix <- function(modelSuffix = "") {
   inSuffix
 }
 
-calculateMeanPred <- function(paramVals, modelMatrix, modelOffset = NULL, linkFunction = "identity", modelSuffix = "") {
-  # process the parameter values
-  inParamVals <- tryCatch(as.double(paramVals), error = function(err) {
-    stop("error processing parameter vector: ", err)
-  })
-  # Process the model matrix
-  inMatrix <- tryCatch(as.matrix(modelMatrix), error = function(err) {
-    stop("error processing model matrix: ", err)
-  })
-  # Process the link function input
-  inLink <- tryCatch(factor(tolower(as.character(linkFunction)), unique(unlist(errorFamilies()))), error = function(err) {
-    stop("error encountered during import of link function: ", err)
-  })
-  if(is.na(inLink)) {
-    stop("error encountered during import of link function: invalid link function selected")
-  }
-  # Ensure that the processed model matrix has the appropriate column names (if present)
-  if(!is.null(names(modelMatrix))) {
-    colnames(inMatrix) <- names(modelMatrix)
-  }
-  if(!is.null(colnames(modelMatrix))) {
-    colnames(inMatrix) <- colnames(modelMatrix)
-  }
-  # Process the input model suffix
-  inSuffix <- processSuffix(modelSuffix)
-  # Initialise an output values vector
-  outValues <- rep(NA, nrow(modelMatrix))
-  if(is.null(names(paramVals)) || is.null(colnames(inMatrix))) {
-    # If either the parameter vector or the model matrix don't have names then match up coefficients and the covariates
-    # based on their position in the matrix/vector
-    outValues <- inMatrix %*% inParamVals[(1:ncol(inMatrix) - 1) %% length(inParamVals) + 1]
-    if(length(inParamVals) > ncol(inMatrix)) {
-      # Add the intercept term (if it is present) - assuming any parameter in the vector with an index larger than the
-      # width of the model matrix is an intercept term
-      outValues <- outValues + inParamVals[(ncol(inMatrix) + 1):length(inParamVals)]
-    }
-  } else {
-    # If both have names then use those to match up the coefficients and the covariates
-    # Find those parameter value names that have entries in the model matrix
-    hasEntry <- names(paramVals) %in% colnames(inMatrix)
-    outValues <- inMatrix[, names(paramVals)[hasEntry]] %*% inParamVals[hasEntry]
-    if(any(!hasEntry)) {
-      # If any parameter values do not have an entry in the model matrix then add them as an intercept term
-      outValues <- outValues + inParamVals[!hasEntry]
-    }
-  }
-  # Add the offset if it is not NULL then add that to the prediction
-  if(!is.null(modelOffset)) {
-    outValues <- tryCatch(as.double(modelOffset) + outValues, error = function(err) {
-      stop("error encountered during processing of model offset: ", err)
-    })
-  }
-  # Apply the inverse of the link function to scale the predicted values accordingly
-  outValues <- tryCatch(switch(as.character(linkFunction),
-    indentity = outValues,
-    log = exp(outValues),
-    logit = exp(outValues) / (1.0 + exp(outValues)),
-    probit = pnorm(outValues),
-    cloglog = 1.0 - exp(-exp(outValues))
-  ), error = function(err) {
-    stop("error encountered during application of link function: ", err)
-  })
-  if(is.null(outValues)) {
-    stop("error encountered during application of link function: invalid link function selected")
-  }
-  outValues
-}
-
-applyLink <- function(dataValues, linkFunction = "identity") {
-  # Retrieve the data values
-  inValue <- tryCatch(as.numeric(dataValues), error = function(err) {
-    stop("error encountered applying link function: ", err)
-  })
-  # Retrieve the link function
-  inLink <- tryCatch(as.character(factor(linkFunction, unique(unlist(errorFamilies())))), error = function(err) {
-    stop("error encountered importing link function definition: ", err)
-  })
-  if(any(is.na(inLink))) {
-    stop("error encountered applying link function: invalid link function selected")
-  }
-  # Apply the link function
-  switch(inLink,
-    identity = inValue,
-    log = log(inValue),
-    logit = log(inValue / (1.0 - inValue)),
-    probit = qnorm(inValue),
-    cloglog = log(-log(1.0 - inValue))
-  )
-}
-
-applyInverseLink <- function(dataValues, linkFunction = "identity") {
-  # Retrieve the data values
-  inValue <- tryCatch(as.numeric(dataValues), error = function(err) {
-    stop("error encountered applying inverse link function: ", err)
-  })
-  # Retrieve the link function
-  inLink <- tryCatch(as.character(factor(linkFunction, unique(unlist(errorFamilies())))), error = function(err) {
-    stop("error encountered importing link function definiton: ", err)
-  })
-  if(any(is.na(inLink))) {
-    stop("error encountered applying inverse link function: invalid link function selected")
-  }
-  # Apply the inverse link function
-  switch(inLink,
-    identity = inValue,
-    log = exp(inValue),
-    logit = exp(inValue) / (1.0 + exp(inValue)),
-    probit = pnorm(inValue),
-    cloglog = 1.0 - exp(-exp(inValue))
-  )
-}
-
-simulateFromErrorFamily <- function(meanVals, scaleParams, errorFamily = "gaussian") {
-  # Import the mean values
-  inMeanVals <- tryCatch(as.numeric(meanVals), error = function(err) {
-    stop("error encountered during simulation from error distribution: ", err)
-  })
-  # Import the scale parameters (these have slightly different meaning depending on the error distribution)
-  if(is.null(scaleParams)) {
-    inScaleParams <- NA
-  } else {
-    inScaleParams <- tryCatch(as.numeric(scaleParams), error = function(err) {
-      stop("error encountered during simulation from error distribution: ", err)
-    })
-  }
-  # Import the error family
-  inErrorFamily <- tryCatch(as.character(factor(errorFamily, names(errorFamilies()))), error = function(err) {
-    stop("error encountered during simulation from error distribution: ", err)
-  })
-  if(any(is.na(inErrorFamily))) {
-    stop("error encountered during simulation from error dsitribution: invalid error family selected")
-  }
-  # Sample from the relevant simulation function
-  switch(inErrorFamily,
-    gaussian = rnorm(length(inMeanVals), inMeanVals, sqrt(1.0 / inScaleParams[1])),
-    gamma = rgamma(length(inMeanVals),
-      shape = inMeanVals * inMeanVals / (inScaleParams[1] * inScaleParams[1]),
-      scale = inScaleParams[1] * inScaleParams[1] / inMeanVals
-    ),
-    beta = rbeta(length(inMeanVals),
-      shape1 = inMeanVals * inScaleParams[1],
-      shape2 = (1.0 - inMeanVals) * inScaleParams[1]
-    ),
-    poisson = rpois(length(inMeanVals), inMeanVals),
-    binomial = rbinom(length(inMeanVals), inScaleParams[(1:length(inMeanVals) - 1) %% length(inScaleParams) + 1], inMeanVals),
-    negbinomial = rnbinom(length(inMeanVals), 1.0 / inScaleParams[1], 1.0 - 1.0 / (1.0 + inScaleParams[1] * inMeanVals)))
-}
-
-# Function to create the node specification for a linear model component
-linearModelToCovariateNodeDefinition <- function(modelFormula, inputData, linkFunction = "identity", regCoeffs = "none", modelSuffix = "") {
-  # Function to centre and scale the input data frame
-  centreAndScale <- function(inCovDataFrame) {
-    outFrame <- as.data.frame(lapply(X = as.list(inCovDataFrame), FUN = function(curCol) {
-      outVec <- curCol
-      # TODO: add in handling routines for binary covariates here
-      if(!is.factor(outVec)) {
-        if(is.character(outVec)) {
-          outVec <- as.factor(outVec)
+### 1.7 ==== Centre and Scale Covariates ====
+#' @title Centre and Scale Covariates
+#'
+#' @param inData A data.frame or object coercible to a data.frame containing the
+#' variables to centre and scale.
+#' @param centreCovs A logical scalar denoting whether the fixed effects in the
+#' model should be centred before the analysis: each covariate element is
+#' subtracted by its mean. \code{centreCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead centred around the output of this function.
+#' @param scaleCovs A logical scalar denoting whether the fixed effects in the
+#' model should be scaled before the analysis: each covariate element is divided
+#' by its standard deviation. \code{scaleCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead scaled around the output of this function.
+#'
+#' @return A data.frame object containing the scaled and centred values of the
+#' covariates. In addition the object is given two attributes:
+#' \itemize{
+#'  \item{centreFactor}{A named numeric vector of length equal to the number of
+#'  columns in \code{inData} that contains the number used to centre the
+#'  variable or \code{NA} if that variable remains uncentred}
+#'  \item{scaleFactor}{A named numeric vector of length equal to the number of
+#'  columns in \code{inData} that contains the number used to scale the
+#'  variable or \code{NA} if that variable remains unscaled}
+#' }
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @keywords internal
+centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
+  # Sanity check the centre and scale arguments
+  sanityCheckCentreScale <- function(inValue, defaultFunc) {
+    outValue <- inValue
+    if(!is.functon(outValue)) {
+      outValue <- as.logical(outValue)
+      if(length(outValue) <= 0) {
+        stop("input argument has length zero")
+      } else if(length(outValue) > 1) {
+        warning("input argument has a length greater than one so only the first element will be used")
+        outValue <- outValue[1]
+      }
+      if(is.na(outValue)) {
+        outValue <- NULL
+      } else {
+        if(outValue) {
+          outValue <- defaultFunc
         } else {
-          outVec <- (outVec - mean(outVec, na.rm = TRUE)) / sd(outVec, na.rm = TRUE)
+          outValue <- NULL
         }
       }
-      outVec
-    }))
-    names(outFrame) <- names(inCovDataFrame)
-    outFrame
+    }
+    outValue
   }
-  # Process the model formula input
-  inFormula <- ~ 1
-  if(!is.null(modelFormula)) {
-    inFormula <- tryCatch(as.formula(modelFormula), error = function(err) {
-      stop("error encountered during processing of model specification: ", err)
+  inCentre <- NULL
+  if(is.numeric(centreCovs)) {
+    if(length(centreCovs) <= 0) {
+      stop("length of centre argument has length zero")
+    }
+    inCentre <- centreCovs
+  } else {
+    inCentre <- tryCatch(sanityCheckCentreScale(centreCovs, mean), error = function(err) {
+      stop("error encountered processing the centre factor argument: ", err)
     })
   }
-  # Process the data input and centre and scale it
-  inData <- tryCatch(as.data.frame(inputData), error = function(err) {
-    stop("error encountered during import of data: ", err)
-  })
-  # Process the link function input
-  inLink <- tryCatch(factor(tolower(as.character(linkFunction)), unique(unlist(errorFamilies()))), error = function(err) {
-    stop("error encountered during import of link function: ", err)
-  })
-  if(is.na(inLink)) {
-    stop("error encountered during import of link function: invalid link function selected")
-  }
-  # Process the regularisation regime for the coefficients
-  inReg <- tryCatch(factor(tolower(as.character(regCoeffs)), c("none", "ridge", "lasso")), error = function(err) {
-    stop("error encountered during processing of instructions to regularise coefficients: ", err)
-  })
-  if(is.na(inReg)) {
-    stop("error encountered during processing of instructions to regularise coefficients: invalid regularisation technique selected")
-  }
-  # Process the model suffix
-  inSuffix <- processSuffix(modelSuffix)
-  # Retrieve the model matrix
-  covMeanVals <- sapply(X = as.list(inData), FUN = function(curCol) {
-    outVal <- c(NA, NA)
-    # TODO: add in handling routines for binary covariates here
-    if(!is.factor(curCol) && !is.character(curCol)) {
-      outVal <- c(mean(curCol, na.rm = TRUE), sd(curCol, na.rm = TRUE))
+  inScale <- NULL
+  if(is.numeric(scaleCovs)) {
+    if(length(scaleCovs) <= 0) {
+      stop("length of scale argument has length zero")
     }
-    names(outVal) <- c("mean", "sd")
-    outVal
-  })
-  colnames(covMeanVals) <- colnames(inData)
-  curModelMatrix <- model.matrix(inFormula, model.frame(inFormula, data = centreAndScale(inData), na.action = na.pass))
-  # Check whether an intercept term is present in the model matrix
-  hasIntercept <- 0 %in% attr(curModelMatrix, "assign")
-  stocNodeDefinitions <- list()
-  if(hasIntercept) {
-    # Remove the intercept term from the model matrix if it exists
-    curModelMatrix <- curModelMatrix[, attr(curModelMatrix, "assign") != 0, drop = FALSE]
-    # Add the intercept term to the list of stochastic node definitions
-    stocNodeDefinitions <- append(stocNodeDefinitions, setNames(list(
-      structure("dnorm(0.0, 0.001)", loopIter = NA, loopMax = NA, vectorSpec = NA)
-    ), paste("intercept", inSuffix, "Coeff", sep = "")))
-  }
-  outData <- list()
-  if(ncol(curModelMatrix) > 0) {
-    # Ensure that the model matrix covariates have names
-    colnames(curModelMatrix) <- paste(makeBUGSFriendlyNames(colnames(curModelMatrix)), inSuffix, sep = "")
-    # Assign names for the regularisation parameters
-    ridgeParamName <- paste("ridge", inSuffix, "Prec", sep = "")
-    lassoParamName <- paste("lasso", inSuffix, "Rate", sep = "")
-    # Create an ouput data list with the covariates
-    outData <- as.list(as.data.frame(curModelMatrix))
-    # Add the regression coefficients to the list of stochastic node definitions
-    stocNodeDefinitions <- append(stocNodeDefinitions, setNames(lapply(X = colnames(curModelMatrix), FUN = function(curCovName, ridgeParamName, lassoParamName, inReg) {
-      structure(switch(as.character(inReg),
-        none = "dnorm(0.0, 0.001)",
-        ridge = paste("dnorm(0.0, ", ridgeParamName, ")", sep = ""),
-        lasso = paste("ddexp(0.0, ", lassoParamName, ")", sep = "")),
-        loopIter = NA, loopMax = NA, vectorSpec = NA)
-    }, ridgeParamName = ridgeParamName, lassoParamName = lassoParamName, inReg = inReg), paste(colnames(curModelMatrix), "Coeff", sep = "")))
-    # Add the regularisation stochastic node definitions (if needed)
-    if(as.character(inReg) == "ridge") {
-      stocNodeDefinitions <- append(stocNodeDefinitions, setNames(list(structure("dgamma(0.05, 0.005)", loopIter = NA, loopMax = NA, vectorSpec = NA)), ridgeParamName))
-    } else if(as.character(inReg) == "lasso") {
-      stocNodeDefinitions <- append(stocNodeDefinitions, setNames(list(structure("dgamma(0.05, 0.005)", loopIter = NA, loopMax = NA, vectorSpec = NA)), lassoParamName))
-    }
-  }
-  # Test to see if there an offset in the model specification
-  offsetFrame <- model.frame(inFormula, data = inData, na.action = na.pass)
-  offsetText <- ""
-  if(!is.null(attr(terms(offsetFrame), which = "offset")) && any(attr(terms(offsetFrame), which = "offset") > 0)) {
-    # Retrieve the offset values if they exist
-    offsetValues <- as.numeric(model.offset(offsetFrame))
-    # Add them to the model specification as data
-    outData <- append(outData, setNames(list(offsetValues), paste("offset", inSuffix, sep = "")))
-    offsetText <- paste(" + offset", inSuffix, "[1:meanPred", inSuffix, "N]", sep = "")
-  }
-  if(ncol(curModelMatrix) > 0) {
-    # Add the mean predictor to the list of deterministic nodes
-    detNodeDefinitions <- setNames(list(
-      structure(
-        # Set the linear regression relationship
-        paste(
-          paste(colnames(curModelMatrix), "[1:meanPred", inSuffix, "N] * ", colnames(curModelMatrix), "Coeff", sep = "", collapse = " + "),
-          ifelse(hasIntercept, paste(" + intercept", inSuffix, "Coeff", sep = ""), ""),
-          offsetText, sep = ""),
-        loopIter = NA, loopMax = NA, linkFunction = as.character(inLink), vectorSpec = paste("1:meanPred", inSuffix, "N", sep = "")
-      )
-    ), paste("meanPred", inSuffix, sep = ""))
+    inScale <- scaleCovs
   } else {
-    detNodeDefinitions <- setNames(list(
-      structure(
-        # Set the linear relationship (in this case it is intercept-only)
-        paste("intercept", inSuffix, "Coeff", sep = ""),
-        loopIter = NA, loopMax = NA, linkFunction = as.character(inLink), vectorSpec = paste("1:meanPred", inSuffix, "N", sep = "")
-      )
-    ), paste("meanPred", inSuffix, sep = ""))
+    inScale <- tryCatch(sanityCheckCentreScale(scaleCovs, sd), error = function(err) {
+      stop("error encountered processing the scale factor argument: ", err)
+    })
   }
-  outConst <- setNames(list(nrow(curModelMatrix)), paste("meanPred", inSuffix, "N", sep = ""))
-  list(
-    inputData = outData,
-    inputConstants = outConst,
-    stochasticNodeDef = stocNodeDefinitions,
-    deterministicNodeDef = detNodeDefinitions,
-    covSummaryStats = covMeanVals
-  )
+  # Sanity check the input data
+  covFrame <- tryCatch(as.data.frame(inData), error = function(err) {
+    stop("error encountered processing the covariate data frame: ", err)
+  })
+  covNames <- colnames(covFrame)
+  if(is.null(covNames)) {
+    covNames <- paste("var", 1:ncol(covFrame), sep = "")
+    colnames(covFrame) <- covNames
+  }
+  # Initialise some centre and scaling variables
+  centreFactors <- setNames(rep(NA, length(covNames)), covNames)
+  scaleFactors <- setNames(rep(NA, length(covNames)), covNames)
+  # Function that assesses whether covariate needs scaling and/or centre alignment
+  doCentreScale <- function(curCov, inFunc) {
+    # Test to see if the input function can take na.rm as an argument
+    hasnarm <- any(c("...", "na.rm") %in% names(formals(inCentre)))
+    outValue <- numeric(NA)
+    if(!is.factor(curCov) && !is.character(curCov) && !is.logical(curCov)) {
+      # If the covariate is not a factor/logical than calculate the centre/scale if there
+      # unique values in the covariate that are not 0 and 1
+      covValues <- tryCatch(as.numeric(curCov), error = function(err) {
+        stop("error encountered processing the covariate information: ", err)
+      })
+      unCovValues <- unqiue(covValues)
+      if(length(unCovValues) > 2 && any(!(unCovValues %in% c(0, 1)))) {
+        if(hasnarm) {
+          outValue <- inFunc(covValues, na.rm = TRUE)
+        } else {
+          outValue <- inFunc(covValues)
+        }
+      }
+    }
+    outValue
+  }
+  # If the centre is a function then apply that in the cases that it is needed
+  if(is.function(inCentre)) {
+    centreFactors <- setNames(sapply(X = as.list(covFrame), FUN = doCentreScale, inFunc = inCentre), covNames)
+  } else {
+    # ... otherwise the input is a numeric vector so use the values directly
+    if(is.null(names(inCentre))) {
+      centreFactors <- setNames(as.numeric(inCentre)[(1:length(covNames) - 1) %% length(as.numeric(inCentre)) + 1], covNames)
+    } else {
+      centreFactors[names(inCentre)] <- as.numeric(inCentre)
+    }
+  }
+  if(is.function(inScale)) {
+    scaleFactors <- setNames(sapply(X = as.list(covFrame), FUN = doCentreScale, inFunc = inScale), covNames)
+  } else {
+    # ... otherwise the input is a numeric vector so use the values directly
+    if(is.null(names(inScale))) {
+      scaleFactors <- setNames(as.numeric(inScale)[(1:length(covNames) - 1) %% length(as.numeric(inScale)) + 1], covNames)
+    } else {
+      scaleFactors[names(inScale)] <- as.numeric(inScale)
+    }
+  }
+  # Centre and scale the values that need it
+  covFrame <- as.data.frame(lapply(X = covNames, FUN = function(curCov, covFrame, centreFactors, scaleFactors) {
+    outVec <- covFrame[, curCov]
+    if(!is.na(centreFactors[curCov])) {
+      outVec <- outVec - centreFactors[curCov]
+    }
+    if(!is.na(scaleFactors[curCov])) {
+      outVec <- outVec / scaleFactors[curCov]
+    }
+    outVec
+  }, covFrame = covFrame, centreFactors = centreFactors, scaleFactors = scaleFactors))
+  colnames(covFrame) <- covNames
+  # Set attributes of the covariate frame
+  attr(covFrame, "centreFactors") <- centreFactors
+  attr(covFrame, "scaleFactors") <- scaleFactors
+  covFrame
 }
 
-linearModelToNodeDefinition <- function(modelFormula, inputData, errorFamily = gaussian, regCoeffs = "none", modelSuffix = "") {
-  # Process the model formula input
-  inFormula <- ~ 1
-  if(!is.null(modelFormula)) {
-    inFormula <- tryCatch(as.formula(modelFormula), error = function(err) {
-      stop("error encountered during processing of model specification: ", err)
-    })
-  }
-  # Process the data input
-  inData <- tryCatch(as.data.frame(inputData), error = function(err) {
-    stop("error encountered during import of data: ", err)
+### 1.8 ==== Process a Model Formula and Data ====
+#' @title Process a Model Formula and Data
+#'
+#' @description Process a model formula and the input data to retrieve the
+#' response variable and the special hierarchical components of the model
+#'
+#' @param inFormula A formula object containing the model specification
+#' @param inData A data.frame, list, or inla.stack.data object containing the
+#' data to apply the model formula to
+#' @param centreCovs A logical scalar denoting whether the fixed effects in the
+#' model should be centred before the analysis: each covariate element is
+#' subtracted by its mean. \code{centreCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead centred around the output of this function.
+#' @param scaleCovs A logical scalar denoting whether the fixed effects in the
+#' model should be scaled before the analysis: each covariate element is divided
+#' by its standard deviation. \code{scaleCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead scaled around the output of this function.
+#'
+#' @return A list object containing the following elements:
+#' \itemize{
+#'  \item{\code{responseValues}}{The values of the response variable}
+#'  \item{\code{responseName}}{The name of the response variable}
+#'  \item{\code{hFunctions}}{Calls to special 'h' functions}
+#'  \item{\code{fFunctions}}{Calls to special 'f' functions}
+#'  \item{\code{covNames}}{The names of the covariates used in the model
+#'  specification and equivalent valid names to use in the NIMBLE model}
+#'  \item{\code{covFrame}}{A data frame of the processed covariates}
+#'  \item{\code{modelMatrix}}{A model matrix resulted from an expansion of the
+#'  covariates performed by \code{\link[stat]{model.matrix}}}
+#'  \item{\code{offetFrame}}{A data frame of offset terms used in the model}
+#' }
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @keywords internal
+processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs = TRUE) {
+  # Initialise an output list
+  outList <- list(terms = NULL, responseValues = numeric(), responseName = character(NA),
+    hFunctions = character(), fFunctions = character(), covNames = character(),
+    covFrame = data.frame(), modelMatrix = matrix(nrow = 0, ncol = 0), offsetFrame = NULL)
+  # Sanity check the model formula
+  curFormula <- tryCatch(stats::as.formula(inFormula), error = function(err) {
+    stop("invalid entry for the model formula object: ", err)
   })
-  # Process the error family distribution
-  testError <- list(link = "identity", family = "gaussian")
-  if(is.function(errorFamily)) {
-    testError <- tryCatch(as.list(do.call(errorFamily, list())), error = function(err) {
-      stop("error encountered during processing of model error distribution: ", err)
-    })
-  } else if(is.character(errorFamily)) {
-    testError <- list(link = NA, family = errorFamily)
-  } else {
-    testError <- tryCatch(as.list(errorFamily), error = function(err) {
-      stop("error encountered during processing of model error distribution: ", err)
-    })
+  # Retrieve the relevant model terms
+  outList$terms <- terms(curFormula, specials = c("h", "f"), data = NULL)
+  # Retrieve the special terms
+  hInds <- attr(outList$terms, "special")$h
+  if(!is.null(hInds)) {
+    outList$hFunctions <- rownames(attr(outList$terms, "factors"))[hInds]
   }
-  # Retrieve the error distribution and link function from the input
-  inFamily <- factor("gaussian", names(errorFamilies()))
-  inLink <- factor("identity", unique(unlist(errorFamilies())))
-  if(is.null(testError$family)) {
-    stop("error encountered during processing of model error distribution: unknown error distribution selected")
-  } else {
-    inFamily <- tryCatch(factor(tolower(as.character(testError$family)), names(errorFamilies())), error = function(err) {
-      stop("error encountered during processing of model error distribution: ", err)
-    })
+  fInds <- attr(outList$terms, "special")$f
+  if(!is.null(fInds)) {
+    outList$fFunctions <- rownames(attr(outList$terms, "factors"))[fInds]
   }
-  if(is.na(inFamily)) {
-    stop("error encountered during processing of model error distribution: unknown error distribution selected")
+  # Retrieve the response variable information
+  if(attr(outList$terms, "response") != 0) {
+    outList$responseName <- rownames(attr(outList$terms, "factors"))[attr(outList$terms, "response")]
   }
-  if(is.null(testError$link) || is.na(testError$link)) {
-    # Use the default link function for that distribution if it hasn't been set
-    inLink <- factor(errorFamilies()[[inFamily]][1], unique(unlist(errorFamilies())))
-  } else {
-    inLink <- tryCatch(factor(tolower(as.character(testError$link)), unique(unlist(errorFamilies()))), error = function(err) {
-      stop("error encountered during processing of model link function: ", err)
-    })
-    if(is.na(inLink)) {
-      stop("error encountered during processing of model link function: unknown link function selected")
+  # Retrieve the other covariates (that are not special functions)
+  outList$covNames <- rownames(attr(outList$terms, "factors"))
+  names(outList$covNames) <- outList$covNames
+  outList$covNames <- outList$covNames[!(outList$covNames %in% c(outList$hFunctions, outList$fFunctions, responseName))]
+  offsetNames <- c()
+  # Tidy the offset variable names
+  if(!is.null(attr(outList$terms, "offset"))) {
+    offsetNames <- rownames(attr(outList$terms, "factors"))[attr(outList$terms, "offset")]
+    outList$covNames[offsetNames] <- gsub("^offset\\(", "", gsub("\\)$", "", outList$covNames[offsetNames], perl = TRUE), perl = TRUE)
+  }
+  covFrame <- NULL
+  if(class(inData) == "inla.data.stack") {
+    # If the input is an INLA data stack object then retrieve the relevant information
+    if(!requireNamespace(INLA, quietly = TRUE)) {
+      stop("handling of INLA stack data requires installation of the 'INLA' package")
     }
-  }
-  if(!(as.character(inLink) %in% errorFamilies()[[as.character(inFamily)]])) {
-    stop("error encountered during processing of model link function: link function is not compatible with error distribution")
-  }
-  # Process the model suffix
-  inSuffix <- processSuffix(modelSuffix)
-  # Retrieve the response variable
-  modelFrame <- model.frame(inFormula, data = inData, na.action = na.pass)
-  if(any(attr(terms(modelFrame), which = "response") == 0)) {
-    stop("error encountered during processing of model input: no response variable provided in model formula")
-  }
-  # Format the response variable information as a list
-  responseData <- model.response(modelFrame)
-  if(is.matrix(responseData)) {
-    responseData <- as.list(as.data.frame(responseData))
-  } else {
-    responseData <- setNames(list(responseData), all.vars(terms(modelFrame))[attr(terms(modelFrame), which = "response")])
-  }
-  # Ensure that the response variables have BUGS-friendly names
-  names(responseData) <- paste(makeBUGSFriendlyNames(names(responseData)), inSuffix, sep = "")
-  # Create the node definitions for the linear model component
-  linearDefs <- linearModelToCovariateNodeDefinition(inFormula, inData, inLink, regCoeffs, inSuffix)
-  # Initialise a series of lists to store node definitions and constants related to the modelling of the
-  # response terms in the model
-  stocRespNodeDefinitions <- list()
-  detRespNodeDefinitions <- list()
-  # Initialise the names of looping variables
-  loopIterName <- paste(names(responseData)[1], "Iter", sep = "")
-  loopMaxName <- paste(names(responseData)[1], "N", sep = "")
-  responseConsts <- setNames(list(length(responseData[[1]])), loopMaxName)
-  if(as.character(inFamily) == "gaussian") {
-    # Gaussian error family
-    # Set relevant parameter names
-    precVarName <- paste(names(responseData)[1], "Prec", sep = "")
-    # Set a normal distribution node for the data elements and a prior for the precision parameter
-    stocRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("dnorm(meanPred", inSuffix, "[", loopIterName, "], ", precVarName, ")", sep = ""),
-        loopIter = loopIterName, loopMax = loopMaxName, vectorSpec = NA
-      ),
-      structure(
-        "dgamma(0.05, 0.005)",
-        loopIter = NA, loopMax = NA, vectorSpec = NA
-      )
-    ), c(names(responseData)[1], precVarName))
-  } else if(as.character(inFamily) == "gamma") {
-    # Gamma error family
-    # Set relevant parameter names
-    sdVarName <- paste(names(responseData)[1], "SD", sep = "")
-    # Set a gamma distribution node for the data elements and a prior for the standard deviation parameter
-    stocRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("dgamma(mean = meanPred", inSuffix, "[", loopIterName, "], sd = ", sdVarName, ")", sep = ""),
-        loopIter = loopIterName, loopMax = loopMaxName, vectorSpec = NA
-      ),
-      structure(
-        "dgamma(0.05, 0.005)",
-        loopIter = NA, loopMax = NA, vectorSpec = NA
-      )
-    ), c(names(responseData)[1], sdVarName))
-  } else if(as.character(inFamily) == "beta") {
-    # Beta error family (uses the parameterisation described in Douma and Weedon 2019)
-    # Set relevant parameter names
-    scaleVarName <- paste(names(responseData)[1], "Scale", sep = "")
-    # Set a standard deviation deterministic node to link the scale
-    detRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("sqrt(meanPred", inSuffix, "[1:", loopMaxName, "] * (1.0 - meanPred", inSuffix, "[1:", loopMaxName, "]) / (1.0 + ", scaleVarName, "))", sep = ""),
-        loopIter = NA, loopMax = NA, linkFunction = NA, vectorSpec = paste("1:", loopMaxName, sep = "")
-      )
-    ), paste(names(responseData)[1], "SD", sep = ""))
-    # Set a beta distribution node for the data elements and set a prior for the scale parameter
-    stocRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("dbeta(mean = meanPred", inSuffix, "[", loopIterName, "], sd = ", names(responseData)[1], "SD[", loopIterName, "])", sep = ""),
-        loopIter = loopIterName, loopMax = loopMaxName, vectorSpec = NA
-      ),
-      structure(
-        "dgamma(0.05, 0.005)",
-        loopIter = NA, loopMax = NA, vectorSpec = NA
-      )
-    ), c(names(responseData)[1], scaleVarName))
-  } else if(as.character(inFamily) == "poisson") {
-    # Poisson error family
-    # Set a poisson distribution node for the data elements
-    stocRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("dpois(meanPred", inSuffix, "[", loopIterName, "])", sep = ""),
-        loopIter = loopIterName, loopMax = loopMaxName, vectorSpec = NA
-      )
-    ), names(responseData)[1])
-  } else if(as.character(inFamily) == "binomial") {
-    # Binomial error family
-    if(length(responseData) != 2) {
-      stop("error encountered when defining binomial regression model: response variable is not dimensioned sufficiently to calculate the number of trials")
+    # Retrieve the response variable
+    if(!is.na(outList$responseName)) {
+      outList$responseValues <- eval(parse(text = outList$responseName), envir = INLA::inla.stack.data(inData))
     }
-    # Create a number of trials parameter
-    responseData[[2]] <- responseData[[1]] + responseData[[2]]
-    names(responseData)[2] <- paste(names(responseData)[1], "NumTrials", sep = "")
-    # Set a binomial distribution node for the data elements
-    stocRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("dbin(meanPred", inSuffix, "[", loopIterName, "], ", names(responseData)[2], "[", loopIterName, "])", sep = ""),
-        loopIter = loopIterName, loopMax = loopMaxName, vectorSpec = NA
-      )
-    ), names(responseData)[1])
-  } else if(as.character(inFamily) == "negbinomial") {
-    # Negative binomial error family (uses the parameterisation described in Ver Hoef and Boveng 2007)
-    # Set relevant parameter names
-    scaleVarName <- paste(names(responseData)[1], "Scale", sep = "")
-    # Create a set of deterministic nodes to convert between a mean and scale parameterisation to the canonical parameterisation
-    detRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("1.0 - 1.0 / (1.0 + ", scaleVarName, " * meanPred", inSuffix, "[1:", loopMaxName, "])", sep = ""),
-        loopIter = NA, loopMax = NA, linkFunction = NA, vectorSpec = paste("1:", loopMaxName, sep = "")
-      ),
-      structure(
-        paste("1.0 / ", scaleVarName, sep = ""),
-        loopIter = NA, loopMax = NA, linkFunction = NA, vectorSpec = NA
-      )
-    ), paste(names(responseData)[1], c("P", "R"), sep = ""))
-    # Set a negative binomial distribution node for the data elements and set a prior for the scale parameter
-    stocRespNodeDefinitions <- setNames(list(
-      structure(
-        paste("dnegbin(", names(responseData)[1], "P[", loopIterName, "], ", names(responseData)[1], "R)", sep = ""),
-        loopIter = loopIterName, loopMax = loopMaxName, vectorSpec = NA
-      ),
-      structure(
-        "dgamma(0.05, 0.005)",
-        loopIter = NA, loopMax = NA, vectorSpec = NA
-      )
-    ), c(names(responseData)[1], scaleVarName))
+    # Retrieve the covariate values
+    covFrame <- as.data.frame(lapply(X = outList$covNames, FUN = function(curCovName, rhsData, aMat) {
+      #inVec <- rhsData[[curCovName]]
+      inVec <- tryCatch(eval(parse(text = curCovName), envir = as.list(rhsData)), error = function(err) {
+        stop("error encountered during processing of covariate ", curCovName, ": ", err)
+      })
+      isNotNA <- !is.na(inVec)
+      outValues <- rep(NA, length(row(aMat)))
+      if(is.character(inVec) || is.factor(inVec)) {
+        # Covariate is a factor so sort of do a matrix multiplication except only retaining element that correspond
+        # to a non-zero entry in the transition matrix
+        outValues <- sapply(X = length(inVec[isNotNA]), FUN = function(curIndex, aMat, inVec) {
+          outVal <- inVec[as.logical(aMat[curIndex, ])]
+          if(length(outVal) <= 0) {
+            outVal <- NA
+          } else if(length(outVal) > 1) {
+            outVal <- outVal[1]
+            warning("multiple factor covariates values mapping to single response variable element at index ", curIndex, ": only the first mapping will be used")
+          }
+          outVal
+        }, aMat = aMat[, isNotNA], inVec = as.character(inVec[isNotNA]))
+        if(is.factor(inVec)) {
+          # Restore the levels information if the input was a factor (useful for ordering outputs)
+          outValues <- factor(outValues, levels = levels(inVec))
+        }
+      } else if(is.logical(inVec)) {
+        # Covariate is a logical vector so multiply out the transformation matrix and store non-zero elements as TRUE (FALSE otherwise)
+        outValues <- ifelse(aMat[, isNotNA] %*% as.numeric(inVec[isNotNA]) == 0, FALSE, TRUE)
+      } else {
+        # Covariate is a numeric vector so do standard matrix transformation
+        outValues <- aMat[, isNotNA] %*% as.numeric(inVec[isNotNA])
+      }
+      outValues
+    }, rhsData = INLA::inla.stack.RHS(inData), aMat = INLA::inla.stack.A(inData)))
+    names(covFrame) <- outlist$covNames
+  } else {
+    # Retrieve the response values
+    if(!is.na(outList$responseName)) {
+      outList$responseValues <- tryCatch(eval(parse(text = outList$responseName), envir = as.list(inData)), error = function(err) {
+        stop("invalid entry for the data object: ", err)
+      })
+    }
+    # Retrieve the covariate values
+    covFrame <- as.data.frame(lapply(X = outList$covNames, FUN = function(curCovName, covList) {
+      tryCatch(eval(parse(text = curCovName), envir = covList), error = function(err) {
+        stop("error encountered during processing of covariate ", curCovName, ": ", err)
+      })
+    }, covList = as.list(inData)))
+    names(covFrame) <- outList$covNames
   }
-  list(
-    inputData = append(linearDefs$inputData, responseData),
-    inputConstants = append(linearDefs$inputConstants, responseConsts),
-    stochasticNodeDef = append(linearDefs$stochasticNodeDef, stocRespNodeDefinitions),
-    deterministicNodeDef = append(linearDefs$deterministicNodeDef, detRespNodeDefinitions),
-    link = inLink,
-    family = inFamily,
-    responseDataNodeNames = names(responseData)[!grepl("NumTrials$", names(responseData), perl = TRUE)],
-    covSummaryStats = linearDefs$covSummaryStats
-  )
+  respLength <- length(outList$responseValues)
+  if(!is.null(dim(outList$responseValues))) {
+    respLength <- dim(outList$responseValues)[1]
+  }
+  if(respLength != nrow(covFrame)) {
+    stop("response variable and fixed covariate lengths do not match")
+  }
+  # Process the offset variables
+  if(length(offsetNames) > 0) {
+    inOffNames <- outList$covNames[offsetNames]
+    outList$offsetFrame <- covFrame[, inOffNames, drop = FALSE] # Put the offset variables in a seperate data frame
+    nonOffset <- !(colnames(covFrame) %in% inOffNames)
+    covFrame <- covFrame[, nonOffset]                           # Take the offset variables out of the covariate data frame
+    outList$covNames <- outList$covNames[nonOffset]             # Remove the offset variables from the covariate list
+  }
+  # Centre and scale the covariate matrix
+  outList$covFrame <- centreScaleCovariates(covFrame, centreCovs, scaleCovs)
+  # Convert the covariate frame into a model matrix
+  outList$modelMatrix <- model.matrix(outList$terms, model.frame(outList$terms, outList$covFrame))
+  isIFunction <- grepl("^I\\(.*\\)$", outList$covNames, perl = TRUE)
+  if(any(isIFunction)) {
+    outList$covNames[isIFunction] <- paste("`", outList$covFrame[isIFunction], "`", sep = "")
+    colnames(outList$covFrame) <- outList$covNames
+  }
+  # Produce nimble-friendly versions of the covariate names
+  outList$covNames <- rbind(outList$covNames, makeBUGSFriendlyNames(outList$covNames))
+  rownames(outList$covNames) <- c("frameName", "nimbleName")
+  outList
 }
 
-nodeDefinitionToNIMBLECode <- function(stochasticNodeDef, deterministicNodeDef) {
-  # Process the user
-  inStochastic <- tryCatch(as.list(stochasticNodeDef), error = function(err) {
-    stop("error encountered when processing stochastic node definitions: ", err)
-  })
-  inDeterministic <- tryCatch(as.list(deterministicNodeDef), error = function(err) {
-    stop("error encountered when processing deterministic node definitions: ", err)
-  })
-  processNode <- function(curNodeName, isStochastic, nodeList) {
-    # Retrieve the current node
-    curNode <- tryCatch(as.list(nodeList)[[curNodeName]], error = function(err) {
-      stop("error encountered during processing of node ", curNodeName, ": ", err)
-    })
-    # Initialise attributes for the node
-    loopIter <- c()
-    loopMax <- c()
-    loopStart <- c()
-    vectorSpec <- c()
-    linkFunction <- c()
-    # Import the attributes of the node
-    if(!is.null(attr(curNode, which = "loopIter"))) {
-      loopIter <- tryCatch(as.character(attr(curNode, which = "loopIter")), error = function(err) {
-        stop("error encountered during processing of node ", curNodeName, ": ", err)
-      })
-      loopIter <- loopIter[!is.na(loopIter)]
-    }
-    if(!is.null(attr(curNode, which = "loopMax"))) {
-      loopMax <- tryCatch(as.character(attr(curNode, which = "loopMax")), error = function(err) {
-        stop("error encountered during processing of node ", curNodeName, ": ", err)
-      })
-      loopMax <- loopMax[!is.na(loopMax)]
-    }
-    if(!is.null(attr(curNode, which = "loopStart"))) {
-      loopStart <- tryCatch(as.character(attr(curNode, which = "loopStart")), error = function(err) {
-        stop("error encountered during processing of node ", curNodeName, ": ", err)
-      })
-      loopStart <- loopStart[!is.na(loopStart)]
-    }
-    if(!is.null(attr(curNode, which = "vectorSpec"))) {
-      vectorSpec <- tryCatch(as.character(attr(curNode, which = "vectorSpec")), error = function(err) {
-        stop("error encountered during processing of node ", curNodeName, ": ", err)
-      })
-      vectorSpec <- vectorSpec[!is.na(vectorSpec)]
-    }
-    if(!is.null(attr(curNode, which = "linkFunction"))) {
-      linkFunction <- tryCatch(as.character(attr(curNode, which = "linkFunction")), error = function(err) {
-        stop("error encountered during processing of node ", curNodeName, ": ", err)
-      })
-      linkFunction <- linkFunction[!is.na(linkFunction)]
-    }
-    if(length(linkFunction) > 1) {
-      stop("error encountered during processing of node ", curNodeName, ": link function specification must have length 1")
-    }
-    # Convert to node to a character vector
-    inNode <- tryCatch(as.character(curNode), error = function(err) {
-      stop("error encountered during processing of node ", curNodeName, ": ", err)
-    })
-    # Add any indexing to the node that might be required
-    preText <- curNodeName
-    postText <- curNode
-    if(length(vectorSpec) > 0 || length(loopIter) > 0) {
-      indexText <- c(paste(vectorSpec, collapse = ", ", sep = ""), paste(loopIter, collapse = ", ", sep = ""))
-      preText <- paste(preText, "[", paste(indexText[indexText != ""], collapse = ", ", sep = ""), "]", sep = "")
-    }
-    # Add any link function to the node that might be required (NIMBLE now allows link functions on stochastic nodes as well as deterministic ones)
-    if(length(linkFunction) > 0) {
-      if(linkFunction == "log") {
-         preText <- paste("log(", preText, ")", sep = "")
-      } else if(linkFunction == "logit") {
-         preText <- paste("logit(", preText, ")", sep = "")
-      } else if(linkFunction == "probit") {
-         preText <- paste("probit(", preText, ")", sep = "")
-      } else if(linkFunction == "cloglog") {
-        preText <- paste("cloglog(", preText, ")", sep = "")
-      } else if(linkFunction != "identity") {
-        stop("error encountered during processing of node ", curNodeName, ": invalid link function selected")
+### 1.9 ==== Retrieve Elements From ... For Use in Other Functions ====
+#' @title Process ... Arguments
+#'
+#' @description Utility function to retrieve specified elements from a ...
+#' argument to pass to another function
+#'
+#' @param argsToRetrieve Either a function which will used to search \code{...}
+#' for its arguments or a character vector that specifies the arguments to
+#' retrieve
+#' @param ... Set of arguments of which some are to be retrieved in
+#' \code{argsToRetrieve}
+#'
+#' @return A pairlist (as returned by \code{link[base]{alist}}) containing the
+#' relevant arguments
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @keywords internal
+processEllipsisArgs <- function(argsToRetrieve, ...) {
+  outArgs <- list()
+  if(is.function(argsToRetreve)) {
+    # If the input argument is a function then retrieve the argument lists (and
+    # their default values from the function definition)
+    outArgs <- formals(argsToRetrieve)
+  } else {
+    # Otherwise setup a pairlist with empty parameters for each of the relevant
+    # arguments. This might be a too fiddly way to do it - probably a better
+    # option somewhere
+    outArgs <- tryCatch(
+      eval(parse(text =
+        paste0("alist(", paste(as.character(argsToRetrieve), "=", collapse = ", "), ")")
+      ), envir = list(argsToRetrieve = argsToRetrieve), enclos = NULL), error = function(err) {
+        stop("error encountered during processing of the arguments to retrieve: ", err)
       }
-    }
-    # Combine the text together to create the text defining the node
-    nodeText <- paste("\t", preText, ifelse(isStochastic, " ~ ", " <- "), postText, sep = "")
-    # Add in loop information if the node is defined as part of a loop
-    if(length(loopIter) > 0) {
-      if(length(loopMax) == 0) {
-        stop("error encountered during processing of node ", curNodeName, ": loop limit not specified for indexed node")
-      }
-      if(length(loopStart) == 0) {
-        loopStart <- "1"
-      }
-      nodeText <- paste(paste(rep("\t", length(loopIter)), collapse = ""), nodeText, sep = "")
-      loopText <- as.character(t(sapply(X = 1:length(loopIter), FUN = function(curLoopIndex, loopIter, loopMax, numLoops) {
-        c(
-          paste(paste(rep("\t", curLoopIndex), collapse = ""), "for(", loopIter[curLoopIndex], " in ", loopStart[(curLoopIndex - 1) %% length(loopStart) + 1], ":", loopMax[(curLoopIndex - 1) %% length(loopMax) + 1], ") {", sep = ""),
-          paste(paste(rep("\t", numLoops - curLoopIndex + 1), collapse = ""), "}", sep = "")
-        )
-      }, loopIter = loopIter, loopMax = loopMax, numLoops = length(loopIter))))
-      nodeText <- paste(c(loopText[1:(length(loopText) / 2)], nodeText, loopText[(length(loopText) / 2 + 1):length(loopText)]), collapse = "\n")
-    }
-    nodeText
+    )
   }
-  # Create the entire model text
-  modelText <- paste(
-    "nimbleCode({",
-    paste(sapply(X = names(inStochastic), FUN = processNode, isStochastic = TRUE, nodeList = inStochastic), collapse = "\n"),
-    paste(sapply(X = names(inDeterministic), FUN = processNode, isStochastic = FALSE, nodeList = inDeterministic), collapse = "\n"),
-    "})", sep = "\n")
-  # Parse the text to create the model code object
-  eval(parse(text = modelText))
+  # Collect the ... parameters
+  ellipsisParameters <- substitute(alist(...))
+  if(!is.null(names(outArgs)) && !is.null(names(ellipsisParameters))) {
+    paramsInEllipsis <- names(outArgs) %in% names(ellipsisParameters)
+    if(any(paramsInEllipsis)) {
+      # Copy those parameters across that occur in the ellipsis parameters
+      outArgs[names(outArgs)[paramsInEllipsis]] <- ellipsisParameters[names(outArgs)[paramsInEllipsis]]
+    }
+  }
+  outArgs
 }
+
+### 1.10 ==== Convert Model Definition to NIMBLE Code ====
+#' @title Convert a Model Definition into NIMBLE Code
+#'
+#' @description A function to create a full NIMBLE model definition from a
+#' standard model specification with a syntax similar to that used in the
+#' \link[stats]{\code{glm}} model specification
+#'
+#' @param formula A formula that takes a similar form to that used in
+#' \link[stats]{\code{glm}} except that hierarchical components can be added
+#' to the model specification using the \link{\code{h}} function.  In addition
+#' it is possible to specify random effects from INLA using the
+#' \link[INLA]{\code{f}} function.
+#' @param family The specification of the likelihood family to use. The default
+#' is a Gaussian distribution with identity link. The argument can either be
+#' a string containing the name of the likelihood family (case insensitive) or
+#' a \link[stats]{\code{family}} object containing the family and link function
+#' specification. If the \code{family} argument is a string then the \code{link}
+#' argument can be used to specify an alternative link function that the
+#' @param link
+#'
+
