@@ -987,7 +987,106 @@ processEllipsisArgs <- function(argsToRetrieve, ...) {
   outArgs
 }
 
-### 1.10 ==== Convert Model Definition to NIMBLE Code ====
+### 1.10 ==== Custom Link Function ====
+#' @title Function to Define a Custom Link Function
+#'
+#' @description A function to allow for the definition of custom or non-standard
+#' link functions for use in generalized linear models
+#'
+#' @param func A function with one argument that applies the link function to
+#' that argument
+#' @param invfunc A function with one argument that applies the inverse of the
+#' link function to that argument
+#' @param nimbleImp A function with two arguments. The first argument is a
+#' character scalar of an output node in NIMBLE that contains the mean value
+#' of the response variable that is the subject of the regression model and the
+#' second argument is the text containing the linear model specification. The
+#' function returns a character scalar containing the text of the NIMBLE code
+#' specification relating the mean value to the linear model specification.
+#'
+#' @return A list of containing the following named elements:
+#' \itemize{
+#'  \item{\code{func}}{A version of the function of the \code{func} argument
+#'  encapsulated such that it has an interface usable by the package}
+#'  \item{\code{invfunv}}{A version of the function of the \code{invfunc}
+#'  argument encapsulated such that it has an interface usable by the package}
+#'  \item{\code{nimbleImp}}{A version of the function of the \code{nimbleImp}
+#'  argument encapsulated such that is has an interface usable by the package}
+#' }
+#' @examples
+#' # Example of using the custom link function to implement the standard
+#' # log link function
+#'
+#' # 1. Define a function that creates the NIMBLE model specification using the
+#' # link function. The function has two arguments: 'outNodeText' which is the
+#' # text containing the name of the output node containing the mean value
+#' # which is the response of the regression model, 'expFormText' which is the
+#' # text containing the linear model specification
+#' nimbleLinkSpec <- function(outNodeText, expFormText) {
+#'   paste0("log(", outNodeText, ") <- ", expFormText)
+#' }
+#' # so for example:
+#' nimbleLinkSpec("meanValue[iter]", "intercept + coefficient * covariate[iter]")
+#' # will give "log(meanValue[iter]) <- intercept + coefficient * covariate[iter]"
+#'
+#' # 2. Use the NIMBLE link specification function alongside the R
+#' # implementation of the link function and its inverse to produce a custom
+#' # link function that is usable by the package
+#' customLink(log, exp, nimbleLinkSpec)
+#'
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}}
+#' @export
+customLink <- function(func, invfunc, nimbleImp) {
+  # Ensure that all the inputs are functions
+  inFunc <- tryCatch(as.function(func), error = function(err) {
+    stop("invalid entry for the link function: ", err)
+  })
+  inInvFunc <- tryCatch(as.function(invfunc), error = function(err) {
+    stop("invalid entry for the inverse link function: ", err)
+  })
+  inNimbleSpec <- tryCatch(as.function(nimbleImp), error = function(err) {
+    stop("invalid entry for the nimble code link specification function: ", err)
+  })
+  list(
+    # Encapsulate the link function
+    func = eval(function(inData) {
+      tempFunc <- inFunc
+      outVal <- tryCatch(tempFunc(inData), error = function(err) {
+        stop("error encountered during application of link function: ", err)
+      })
+      outVal
+    }, list(inFunc = inFunc)),
+    # Encapsulate the inverse link function
+    invfunc = eval(function(inData) {
+      tempFunc <- inFunc
+      outVal <- tryCatch(tempFunc(inData), error = function(err) {
+        stop("error encountered during application of inverse link function: ", err)
+      })
+      outVal
+    }, list(inFunc = inInvFunc)),
+    # Encapsulate the NIMBLE code specification function
+    nimbleImp = eval(function(outNodeText, expFormText) {
+      tempFunc <- inFunc
+      outVal <- tryCatch(as.character(tempFunc(outNodeText, expFormText)), error = function(err) {
+        stop("error encountered during application of NIMBLE code specification function: ", err)
+      })
+      if(is.null(outVal) || length(outVal) <= 0) {
+        stop("error encountered during application of NIMBLE code specification function: NULL of zero-length vector returned")
+      } else if(length(outVal) > 1) {
+        warning("NIMBLE code specification function returns vector of length greater than one: vector will be concatened with line breaks")
+        outVal <- paste(outVal, collapse = "\n")
+      }
+      outVal
+    }, list(inFunc = inNimbleSpec))
+  )
+}
+
+### 1.11 ==== Custom Error Distribution ====
+#' @title
+
+### 1.12 ==== Convert Model Definition to NIMBLE Code ====
 #' @title Convert a Model Definition into NIMBLE Code
 #'
 #' @description A function to create a full NIMBLE model definition from a
@@ -1004,7 +1103,8 @@ processEllipsisArgs <- function(argsToRetrieve, ...) {
 #' a string containing the name of the likelihood family (case insensitive) or
 #' a \link[stats]{\code{family}} object containing the family and link function
 #' specification. If the \code{family} argument is a string then the \code{link}
-#' argument can be used to specify an alternative link function that the
+#' argument can be used to specify an alternative link function than the default
+#' link function for that distribution.
 #' @param link
 #'
 

@@ -240,31 +240,31 @@ linkFunctions_raw <- list(
   identity = list(
     func = function(inData) { inData },
     invfunc = function(inData) { inData },
-    nimbleImp = function(expFormText, outNodeText) { paste(outNodeText, "<-", expFormText) }
+    nimbleImp = function(outNodeText, expFormText) { paste(outNodeText, "<-", expFormText) }
   ),
   ### 1.3.2 ---- Log link function ----
   log = list(
     func = function(inData) { log(inData) },
     invfunc = function(inData) { exp(inData) },
-    nimbleImp = function(expFormText, outNodeText) { paste0("log(", outNodeText, ") <- ", expFormText) }
+    nimbleImp = function(outNodeText, expFormText) { paste0("log(", outNodeText, ") <- ", expFormText) }
   ),
   ### 1.3.3 ---- Logit link function ----
   logit = list(
     func = function(inData) { log(inData / (1.0 - inData)) },
     invfunc = function(inData) { exp(inData) / (1.0 + exp(inData)) },
-    nimbleImp = function(expFormText, outNodeText) { paste0("logit(", outNodeText, ") <- ", expFormText) }
+    nimbleImp = function(outNodeText, expFormText) { paste0("logit(", outNodeText, ") <- ", expFormText) }
   ),
   ### 1.3.4 ---- Probit link function ----
   probit = list(
     func = function(inData) { qnorm(inData) },
     invfunc = function(inData) { pnorm(inData) },
-    nimbleImp = function(expFormText, outNodeText) { paste0("probit(", outNodeText, ") <- ", expFormText)}
+    nimbleImp = function(outNodeText, expFormText) { paste0("probit(", outNodeText, ") <- ", expFormText)}
   ),
   ### 1.3.5 ---- Complimentary log-log function ----
   cloglog = list(
     func = function(inData) { log(-log(1.0 - inData)) },
     invfunc = function(inData) { 1.0 - exp(-exp(inData)) },
-    nimbleImp = function(expFormText, outNodeText) { paste0("cloglog(", outNodeText, ") <- ", expFormText)}
+    nimbleImp = function(outNodeText, expFormText) { paste0("cloglog(", outNodeText, ") <- ", expFormText)}
   )
 )
 
