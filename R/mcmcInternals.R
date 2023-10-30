@@ -1084,7 +1084,8 @@ customLink <- function(func, invfunc, nimbleImp) {
 }
 
 ### 1.11 ==== Custom Error Distribution ====
-#' @title
+#' @title Function to Define a Custom Error Distribution
+#'
 
 ### 1.12 ==== Convert Model Definition to NIMBLE Code ====
 #' @title Convert a Model Definition into NIMBLE Code

@@ -75,7 +75,41 @@ ntrialsSpecify <- function(...) {
   tempOut[(1:nData - 1) %% length(tempOut) + 1]
 }
 
-### 1.2 ==== List of supported error distributions ====
+### 1.2 ==== List of supported link functions ====
+linkFunctions_raw <- list(
+  ### 1.2.1 ---- Identity link function ----
+  identity = list(
+    func = function(inData) { inData },
+    invfunc = function(inData) { inData },
+    nimbleImp = function(outNodeText, expFormText) { paste(outNodeText, "<-", expFormText) }
+  ),
+  ### 1.2.2 ---- Log link function ----
+  log = list(
+    func = function(inData) { log(inData) },
+    invfunc = function(inData) { exp(inData) },
+    nimbleImp = function(outNodeText, expFormText) { paste0("log(", outNodeText, ") <- ", expFormText) }
+  ),
+  ### 1.2.3 ---- Logit link function ----
+  logit = list(
+    func = function(inData) { log(inData / (1.0 - inData)) },
+    invfunc = function(inData) { exp(inData) / (1.0 + exp(inData)) },
+    nimbleImp = function(outNodeText, expFormText) { paste0("logit(", outNodeText, ") <- ", expFormText) }
+  ),
+  ### 1.2.4 ---- Probit link function ----
+  probit = list(
+    func = function(inData) { qnorm(inData) },
+    invfunc = function(inData) { pnorm(inData) },
+    nimbleImp = function(outNodeText, expFormText) { paste0("probit(", outNodeText, ") <- ", expFormText)}
+  ),
+  ### 1.2.5 ---- Complimentary log-log function ----
+  cloglog = list(
+    func = function(inData) { log(-log(1.0 - inData)) },
+    invfunc = function(inData) { 1.0 - exp(-exp(inData)) },
+    nimbleImp = function(outNodeText, expFormText) { paste0("cloglog(", outNodeText, ") <- ", expFormText)}
+  )
+)
+
+### 1.3 ==== List of supported error distributions ====
 # A list containing the error distributions natively supported by PaGAn
 # Each element of the list is a supported distribution and each element is itself a list
 # with the following named elements:
@@ -91,7 +125,7 @@ ntrialsSpecify <- function(...) {
 #        a single argument, the model suffix, and returns the NIMBLE code for the
 #        prior specification
 errorFamilies_raw <- list(
-  ### 1.2.1 ---- Specify the components of gaussian regression modelling ----
+  ### 1.3.1 ---- Specify the components of gaussian regression modelling ----
   gaussian = list(
     link = c("identity", "log"),
     nimbleLikeli = function(expNode, dataNode, suffix = "") { paste0(
@@ -107,7 +141,7 @@ errorFamilies_raw <- list(
     discrete = FALSE,
     simulate = function(expNode, errorSD) { rnorm(max(length(expNode), length(errorSD)), mean = expNode, sd = errorSD) }
   ),
-  ### 1.2.2 ---- Specify the components of gamma regression modelling ----
+  ### 1.3.2 ---- Specify the components of gamma regression modelling ----
   gamma = list(
     link = c("log"),
     nimbleLikeli = function(expNode, dataNode, suffix = "") { paste0(
@@ -126,7 +160,7 @@ errorFamilies_raw <- list(
       rgamma(max(length(expNode), length(errorSD)), shape = (expNode * expNode) / errorVar, scale = errorVar / expNode)
     }
   ),
-  ### 1.2.3 ---- Specify the components of beta regression modelling ----
+  ### 1.3.3 ---- Specify the components of beta regression modelling ----
   beta = list(
     link = c("logit", "probit", "cloglog"),
     nimbleLikeli = function(expNode, dataNode, suffix = "") { paste0(
@@ -148,7 +182,7 @@ errorFamilies_raw <- list(
         shape2 = expNode * oneMinusExp * oneMinusExp / errorVar + expNode - 1.0)
     }
   ),
-  ### 1.2.4 ---- Specify the components of poisson regression modelling ----
+  ### 1.3.4 ---- Specify the components of poisson regression modelling ----
   poisson = list(
     link = c("log"),
     nimbleLikeli = function(expNode, dataNode, suffix = "") { paste0(
@@ -164,7 +198,7 @@ errorFamilies_raw <- list(
       rpois(length(expNode), expNode)
     }
   ),
-  ### 1.2.5 ---- Specify the components of binomial regression modelling ----
+  ### 1.3.5 ---- Specify the components of binomial regression modelling ----
   binomial = list(
     link = c("logit", "probit", "cloglog"),
     nimbleLikeli = function(expNode, dataNode, suffix = "", ntrials) { paste0(
@@ -182,7 +216,7 @@ errorFamilies_raw <- list(
       rbinom(max(length(ntrials), length(expNode)), ntrials, expNode)
     }
   ),
-  ### 1.2.6 ---- Specify the components of negative binomial regression modelling ----
+  ### 1.3.6 ---- Specify the components of negative binomial regression modelling ----
   # Uses the parameterisation described in Ver Hoef and Boveng 2007 (https://doi.org/10.1890/07-0043.1)
   negbinomial = list(
     link = c("log"),
@@ -204,7 +238,7 @@ errorFamilies_raw <- list(
         size = errorScale)
     }
   ),
-  ### 1.2.7 ---- Specify the components of beta-binomial regression modelling ----
+  ### 1.3.7 ---- Specify the components of beta-binomial regression modelling ----
   betabinomial = list(
     link = c("logit", "probit", "cloglog"),
     nimbleLikeli = function(expNode, dataNode, suffix = "") { paste0(
@@ -231,40 +265,6 @@ errorFamilies_raw <- list(
       # Use the simulated probabilities to generate binomial variables
       rbinom(numVars, size = ntrials, prob = betaVals)
     }
-  )
-)
-
-### 1.3 ==== List of supported link functions ====
-linkFunctions_raw <- list(
-  ### 1.3.1 ---- Identity link function ----
-  identity = list(
-    func = function(inData) { inData },
-    invfunc = function(inData) { inData },
-    nimbleImp = function(outNodeText, expFormText) { paste(outNodeText, "<-", expFormText) }
-  ),
-  ### 1.3.2 ---- Log link function ----
-  log = list(
-    func = function(inData) { log(inData) },
-    invfunc = function(inData) { exp(inData) },
-    nimbleImp = function(outNodeText, expFormText) { paste0("log(", outNodeText, ") <- ", expFormText) }
-  ),
-  ### 1.3.3 ---- Logit link function ----
-  logit = list(
-    func = function(inData) { log(inData / (1.0 - inData)) },
-    invfunc = function(inData) { exp(inData) / (1.0 + exp(inData)) },
-    nimbleImp = function(outNodeText, expFormText) { paste0("logit(", outNodeText, ") <- ", expFormText) }
-  ),
-  ### 1.3.4 ---- Probit link function ----
-  probit = list(
-    func = function(inData) { qnorm(inData) },
-    invfunc = function(inData) { pnorm(inData) },
-    nimbleImp = function(outNodeText, expFormText) { paste0("probit(", outNodeText, ") <- ", expFormText)}
-  ),
-  ### 1.3.5 ---- Complimentary log-log function ----
-  cloglog = list(
-    func = function(inData) { log(-log(1.0 - inData)) },
-    invfunc = function(inData) { 1.0 - exp(-exp(inData)) },
-    nimbleImp = function(outNodeText, expFormText) { paste0("cloglog(", outNodeText, ") <- ", expFormText)}
   )
 )
 
