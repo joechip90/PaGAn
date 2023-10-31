@@ -789,7 +789,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
 #' response variable and the special hierarchical components of the model
 #'
 #' @param inFormula A formula object containing the model specification
-#' @param inData A data.frame, list, or inla.stack.data object containing the
+#' @param inData A data.frame, list, or inla.data.stack object containing the
 #' data to apply the model formula to
 #' @param centreCovs A logical scalar denoting whether the fixed effects in the
 #' model should be centred before the analysis: each covariate element is
@@ -812,7 +812,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
 #'  specification and equivalent valid names to use in the NIMBLE model}
 #'  \item{\code{covFrame}}{A data frame of the processed covariates}
 #'  \item{\code{modelMatrix}}{A model matrix resulted from an expansion of the
-#'  covariates performed by \code{\link[stat]{model.matrix}}}
+#'  covariates performed by \code{\link[stats]{model.matrix}}}
 #'  \item{\code{offetFrame}}{A data frame of offset terms used in the model}
 #' }
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
@@ -1086,6 +1086,71 @@ customLink <- function(func, invfunc, nimbleImp) {
 ### 1.11 ==== Custom Error Distribution ====
 #' @title Function to Define a Custom Error Distribution
 #'
+#' @description A function that allows for the definition of user-specified
+#' error distributions for use in generalized linear models
+#'
+#' @param nimbleLikeli A function that returns a string containing the text for
+#' a specification of the likelihood in NIMBLE. The function must take three
+#' arguments: the first argument is a string that contains the name of the node
+#' that contains the expectation of the linear model, the second argument is a
+#' string that contains the node containing the data, and the third argument is
+#' an optional suffix that can be added to all the names of the nodes in the
+#' linear model.
+#' @param simulate A function that takes the expected value as its first
+#' argument along with named arguments equal to those defined in
+#' \code{nimblePrior} and \code{nimbleConstants} and then draws a number of
+#' random draws from the error distribution with the specified parameterization.
+#' @param nimblePrior A list with named elements corresponding to each
+#' parameter used in the error distribution and with each element being a
+#' function that returns a string containing a prior specification for that
+#' parameter in NIMBLE code. Each function element takes ones argument: an
+#' optional suffix that can be added to all the names of the nodes in the linear
+#' model.
+#' @param nimbleConstants A list with named elements corresponding to each
+#' constant value used in the error distribution and with each element being a
+#' function that returns a numeric vector containing the values for the
+#' constants. Each function is passed the complete set of parameters that are
+#' passed to the \code{\link{modelDefinitionToNIMBLE}} function. Alternatively,
+#' the constants can just be values as they would be used by the
+#' \code{\link[nimble]{nimbleModel}} function.
+#' @param link Either a character vector containing the names of supported
+#' link functions (see \code{unique(unlist(errorFamilies()))} for a list of
+#' natively-supported link functions) or a list of named elements and each
+#' element is the output of the \code{\link{customLink}} function. The first
+#' element of \code{link} will be used as the default link function for the
+#' distribution.
+#' @param discrete A logical scalar denoting whether the distribution is defined
+#' for a discrete variable or not.
+#' @param elementWise A logical scalar denoting whether the \code{nimbleLikeli}
+#' function defines the likelihood for one data point at a time (using a loop
+#' in the model specification) or defines the entire data vector as a
+#' multivariate output from a joint probability distribution.
+#'
+#' @return A list containing the following named elements:
+#' \itemize{
+#'  \item{\code{link}}{A list of link functions that are valid for this error
+#'  distribution. Each element is a list containing the output from a call to
+#'  the \code{\link{customLink}} function}
+#'  \item{\code{nimbleLikeli}}{A version of the \code{nimbleLikeli} function
+#'  encapsulated in such a way as to be usable by the package}
+#'  \item{\code{nimblePrior}}{A version of the \code{nimblePrior} list with each
+#'  element encapsulated in such as a way as to by usable by the package}
+#'  \item{\code{nimbleConstants}}{A version of the \code{nimbleConstants} list
+#'  with each element encapsulated in such a way as to be usable by the package}
+#'  \item{\code{elementWise}}{A copy of the input argument \code{elementWise}}
+#'  \item{\code{discrete}}{A copy of the input argument \code{discrete}}
+#'  \item{\code{simulate}}{A version of the \code{simulate} function
+#'  encapsulated in such a way as to be usable by the package}
+#' }
+#' @examples
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}} \code{\link{customLink}}
+#'   \code{\link{errorFamilies}} \code{\link{modelDefinitionToNIMBLE}}
+#' @export
+customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleConstants = list(), link = "identity", discrete = FALSE, elementWise = FALSE) {
+  # TODO: Include custom error distribution processing here
+}
 
 ### 1.12 ==== Convert Model Definition to NIMBLE Code ====
 #' @title Convert a Model Definition into NIMBLE Code
@@ -1099,13 +1164,54 @@ customLink <- function(func, invfunc, nimbleImp) {
 #' to the model specification using the \link{\code{h}} function.  In addition
 #' it is possible to specify random effects from INLA using the
 #' \link[INLA]{\code{f}} function.
+#' @param data A data.frame, list, or inla.data.stack object containing the
+#' data to apply the model formula to.
 #' @param family The specification of the likelihood family to use. The default
 #' is a Gaussian distribution with identity link. The argument can either be
 #' a string containing the name of the likelihood family (case insensitive) or
 #' a \link[stats]{\code{family}} object containing the family and link function
 #' specification. If the \code{family} argument is a string then the \code{link}
 #' argument can be used to specify an alternative link function than the default
-#' link function for that distribution.
-#' @param link
+#' link function for that distribution. See \code{names(errorFamilites())} for a
+#' list of natively supported error distributions. Alternatively, the user can
+#' specify a custom error distribution through the application of the
+#' \code{\link{customError}} function.
+#' @param link A character scalar giving the name of the link function to be
+#' used with the likelihood family. See \code{unique(unlist(errorFamilies()))}
+#' for a list of natively-supported link functions.
+#' @param centreCovs A logical scalar denoting whether the fixed effects in the
+#' model should be centred before the analysis: each covariate element is
+#' subtracted by its mean. \code{centreCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead centred around the output of this function.
+#' @param scaleCovs A logical scalar denoting whether the fixed effects in the
+#' model should be scaled before the analysis: each covariate element is divided
+#' by its standard deviation. \code{scaleCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead scaled around the output of this function.
 #'
-
+#' @return A list object containing the following named elements:
+#' \itemize{
+#'  \item{\code{responseValues}}{The values of the response variable}
+#'  \item{\code{responseName}}{The name of the response variable}
+#'  \item{\code{hFunctions}}{Calls to special 'h' functions}
+#'  \item{\code{fFunctions}}{Calls to special 'f' functions}
+#'  \item{\code{covNames}}{The names of the covariates used in the model
+#'  specification and equivalent valid names to use in the NIMBLE model}
+#'  \item{\code{covFrame}}{A data frame of the processed covariates}
+#'  \item{\code{modelMatrix}}{A model matrix resulted from an expansion of the
+#'  covariates performed by \code{\link[stats]{model.matrix}}}
+#'  \item{\code{offetFrame}}{A data frame of offset terms used in the model}
+#'  \item{\code{nimbleCode}}{NIMBLE model specification code for the model
+#'  defined using the input parameters (see \code{\link[nimble]{nimbleCode}})
+#' }
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}} \code{\link{customLink}}
+#'  \code{\link{customError}} \code{\link{errorFamilies}}
+#'  \code{\link{modelDefinitionToNIMBLE}} \link[stats]{\code{glm}}
+#'  \code{\link[INLA]{inla.stack.data}} \code{\link[stats]{model.matrix}}
+#'  \code{\link[nimble]{nimbleCode}}
+modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE) {
+  # TODO: Include model definition code here
+}

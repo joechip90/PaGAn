@@ -217,7 +217,7 @@ errorFamilies_raw <- list(
     }
   ),
   ### 1.3.6 ---- Specify the components of negative binomial regression modelling ----
-  # Uses the parameterisation described in Ver Hoef and Boveng 2007 (https://doi.org/10.1890/07-0043.1)
+  # Uses the parameterization described in Ver Hoef and Boveng 2007 (https://doi.org/10.1890/07-0043.1)
   negbinomial = list(
     link = c("log"),
     nimbleLikeli = function(expNode, dataNode, suffix = "") { paste0(

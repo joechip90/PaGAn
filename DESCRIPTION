@@ -17,11 +17,13 @@ License: GPL-3
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
 Imports:
-    nimble,parallelly,coda
+    nimble,parallelly,coda,INLA
 Suggests: 
     testthat (>= 2.1.0),knitr,rmarkdown
 Enhances:
-    INLA,future
+    future
+LinkingTo:
+	INLA
 VignetteBuilder: knitr
 LazyData: true
 Depends: 
