@@ -12,7 +12,8 @@ Authors@R: c(
         )
     )
 Maintainer: Joseph D. Chipperfield <joechip90@googlemail.com>
-Description: A package of implementation of convienient implementations of models used in paleo-ecological analysis
+Description: A package of convienient implementations of models used in paleo-ecological analysis. This
+    uses the Bayesian software packages NIMBLE and INLA to allow for hierarchical model specifications.
 License: GPL-3
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
@@ -27,8 +28,6 @@ Suggests:
     rmarkdown
 Enhances:
     future
-LinkingTo:
-    INLA
 VignetteBuilder:
     knitr
 LazyData: true

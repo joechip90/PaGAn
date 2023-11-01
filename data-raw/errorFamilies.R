@@ -110,20 +110,27 @@ linkFunctions_raw <- list(
 )
 
 ### 1.3 ==== List of supported error distributions ====
-# A list containing the error distributions natively supported by PaGAn
-# Each element of the list is a supported distribution and each element is itself a list
-# with the following named elements:
-#    link - A vector of valid link functions (the first element is the default link function)
-#    nimbleLikeli - A function that produces the NIMBLE code text that links the
-#        expectation and other parameters to the data.  The function must take the following
-#        arguments:
-#            expNode - The name of the node containing the expectation
-#            dataNode - The name of the node containing the data
-#            suffix - The suffix used in the model
-#    nimblePrior - A list with an element for each parameter for the distribution
-#        that requires a prior specification. Each element is a function that takes
-#        a single argument, the model suffix, and returns the NIMBLE code for the
-#        prior specification
+#' @title Error Distributions
+#' @description A list containing the error distributions natively supported by
+#' PaGAn
+#' @format Each element of the list is a supported distribution and each element
+#' is itself a list with the following named elements:
+#' \describe{
+#'  \item{link}{A vector of valid link functions (the first element is the
+#'  default link function)}
+#'  \item{nimbleLikeli}{ A function that produces the NIMBLE code text that
+#'  links the expectation and other parameters to the data.  The function must
+#'  take the following arguments: expNode - the name of the node containing the
+#'  expectation, dataNode - the name of the node containing the data, suffix -
+#'  the suffix used in the model}
+#'  \item{nimblePrior}{A list with an element for each parameter for the
+#'  distribution that requires a prior specification. Each element is a function
+#'  that takes a single argument, the model suffix, and returns the NIMBLE code
+#'  for the prior specification}
+#' }
+#' @source Package internals
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @noRd
 errorFamilies_raw <- list(
   ### 1.3.1 ---- Specify the components of gaussian regression modelling ----
   gaussian = list(

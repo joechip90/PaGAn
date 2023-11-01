@@ -16,7 +16,7 @@
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @export
 errorFamilies <- function() {
-  setNames(lapply(X = errorFamilies_raw, FUN = function(curErr) { curErr$link }), names(errorFamilies_raw))
+  stats::setNames(lapply(X = errorFamilies_raw, FUN = function(curErr) { curErr$link }), names(errorFamilies_raw))
 }
 
 ### 1.2 ==== Sanity check for NIMBLE parameters ====
@@ -162,13 +162,13 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
     }
   }
   # Remove any "..." parameters if they still exist in the output
-  setNames(lapply(X = nimbleArgs, FUN = function(curFunc) { curFunc[names(curFunc) != "..."] }), names(nimbleArgs))
+  stats::setNames(lapply(X = nimbleArgs, FUN = function(curFunc) { curFunc[names(curFunc) != "..."] }), names(nimbleArgs))
 }
 
 ### 1.3 ==== Run NIMBLE using specified arguments ====
 #' @title Run NIMBLE using the specified arguments
 #'
-#' @decription \code{mcmcNIMBLERun} provides a function to encapsulate an entire
+#' @description \code{mcmcNIMBLERun} provides a function to encapsulate an entire
 #' run of NIMBLE (including compilation steps) using a set of user-specified
 #' parameters
 #'
@@ -186,7 +186,7 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #' the number available on the system
 #'
 #' @return A list containing the following named elements:
-#' \itemize{
+#' \describe{
 #'  \item{\code{model}}{An uncompiled model object as returned by the function
 #'  \code{\link[nimble]{nimbleModel}} using the parameters supplied}
 #'  \item{\code{mcmc}}{An uncompiled MCMC object as returned by the function
@@ -195,6 +195,7 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #'  function \code{\link[nimble]{runMCMC}} using the parameters supplied}
 #' }
 #' @examples
+#' \dontrun{
 #' # Set some parameters for a linear regression
 #' slopeParam <- 0.6
 #' interceptParam <- 4.0
@@ -202,9 +203,9 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #' # A set of arguments to control the MCMC
 #' thin <- 1
 #' thin2 <- 2
-#' niter <- 10000
-#' nburnin <- 500
-#' nchains <- 4
+#' niter <- 500
+#' nburnin <- 100
+#' nchains <- 2
 #' # Initialise some fake data
 #' xtest <- 1:100
 #' ytest <- rnorm(length(xtest), interceptParam + slopeParam * xtest, sqrt(varParam))
@@ -232,6 +233,7 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #'   a = outputMCMC$summary$all.chains["interceptParam", "Mean"],
 #'   b = outputMCMC$summary$all.chains["slopeParam", "Mean"]
 #' )
+#' } # TODO: Fix this example
 #'
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{runMCMC}},
@@ -321,7 +323,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     outValue <- doNIMBLERun(nimbleArgs, FALSE)
   } else {
     ### 1.3.4 ---- Run the multi-core version of the function ----
-    if(!requireNamespace(future, quietly = TRUE)) {
+    if(!requireNamespace("future", quietly = TRUE)) {
       stop("parallelisation of NIMBLE requires the 'future' package")
     }
     # Distribute the chains among the different cores
@@ -426,13 +428,13 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     while(!all(future::resolved(parallelOutputs))) {
       logText <- statusReport(logFiles, beginTime)
       cat(logText)
-      flush.console()
+      utils::flush.console()
       # Sleep for a minute before querying whether the processes are complete again
       Sys.sleep(60)
     }
     logText <- statusReport(logFiles, beginTime)
     cat(logText, "\n\nAll processes complete\n")
-    flush.console()
+    utils::flush.console()
     # Retrieve the values from the future evaluations
     parallelOutputs <- lapply(X = parallelOutputs, FUN = future::value)
     # Stitch together the parallel outputs
@@ -471,7 +473,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     if(requiresSamples) {
       mcmcOutput <- c(mcmcOutput, list(samples = stitchedSamples))
       if(hasMonitorTwo) {
-        mcmcOutput <- c(mcmcOutputs, list(samples2 = stitchedSamplesTwo))
+        mcmcOutput <- c(mcmcOutput, list(samples2 = stitchedSamplesTwo))
       }
     }
     if(requiresSummary) {
@@ -591,7 +593,7 @@ makeBUGSFriendlyNames <- function(inNames, warnType = NA) {
       msgOut <- paste(
         "the following variables are not valid for use in nimble code:",
         paste(tempNames[areNotSame], " (changed to ", outNames[areNotSame], ")", collapse = ", ", sep = ""), sep = " ")
-      msgFunc <- switch(inwarn,
+      msgFunc <- switch(inWarn,
         message = message, warning = warning, error = stop)
       if(!is.null(msgFunc)) {
         do.call(msgFunc, list(msgOut))
@@ -653,7 +655,7 @@ processSuffix <- function(modelSuffix = "") {
 #'
 #' @return A data.frame object containing the scaled and centred values of the
 #' covariates. In addition the object is given two attributes:
-#' \itemize{
+#' \describe{
 #'  \item{centreFactor}{A named numeric vector of length equal to the number of
 #'  columns in \code{inData} that contains the number used to centre the
 #'  variable or \code{NA} if that variable remains uncentred}
@@ -667,7 +669,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
   # Sanity check the centre and scale arguments
   sanityCheckCentreScale <- function(inValue, defaultFunc) {
     outValue <- inValue
-    if(!is.functon(outValue)) {
+    if(!is.function(outValue)) {
       outValue <- as.logical(outValue)
       if(length(outValue) <= 0) {
         stop("input argument has length zero")
@@ -705,7 +707,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
     }
     inScale <- scaleCovs
   } else {
-    inScale <- tryCatch(sanityCheckCentreScale(scaleCovs, sd), error = function(err) {
+    inScale <- tryCatch(sanityCheckCentreScale(scaleCovs, stats::sd), error = function(err) {
       stop("error encountered processing the scale factor argument: ", err)
     })
   }
@@ -719,8 +721,8 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
     colnames(covFrame) <- covNames
   }
   # Initialise some centre and scaling variables
-  centreFactors <- setNames(rep(NA, length(covNames)), covNames)
-  scaleFactors <- setNames(rep(NA, length(covNames)), covNames)
+  centreFactors <- stats::setNames(rep(NA, length(covNames)), covNames)
+  scaleFactors <- stats::setNames(rep(NA, length(covNames)), covNames)
   # Function that assesses whether covariate needs scaling and/or centre alignment
   doCentreScale <- function(curCov, inFunc) {
     # Test to see if the input function can take na.rm as an argument
@@ -732,7 +734,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
       covValues <- tryCatch(as.numeric(curCov), error = function(err) {
         stop("error encountered processing the covariate information: ", err)
       })
-      unCovValues <- unqiue(covValues)
+      unCovValues <- unique(covValues)
       if(length(unCovValues) > 2 && any(!(unCovValues %in% c(0, 1)))) {
         if(hasnarm) {
           outValue <- inFunc(covValues, na.rm = TRUE)
@@ -745,21 +747,21 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
   }
   # If the centre is a function then apply that in the cases that it is needed
   if(is.function(inCentre)) {
-    centreFactors <- setNames(sapply(X = as.list(covFrame), FUN = doCentreScale, inFunc = inCentre), covNames)
+    centreFactors <- stats::setNames(sapply(X = as.list(covFrame), FUN = doCentreScale, inFunc = inCentre), covNames)
   } else {
     # ... otherwise the input is a numeric vector so use the values directly
     if(is.null(names(inCentre))) {
-      centreFactors <- setNames(as.numeric(inCentre)[(1:length(covNames) - 1) %% length(as.numeric(inCentre)) + 1], covNames)
+      centreFactors <- stats::setNames(as.numeric(inCentre)[(1:length(covNames) - 1) %% length(as.numeric(inCentre)) + 1], covNames)
     } else {
       centreFactors[names(inCentre)] <- as.numeric(inCentre)
     }
   }
   if(is.function(inScale)) {
-    scaleFactors <- setNames(sapply(X = as.list(covFrame), FUN = doCentreScale, inFunc = inScale), covNames)
+    scaleFactors <- stats::setNames(sapply(X = as.list(covFrame), FUN = doCentreScale, inFunc = inScale), covNames)
   } else {
     # ... otherwise the input is a numeric vector so use the values directly
     if(is.null(names(inScale))) {
-      scaleFactors <- setNames(as.numeric(inScale)[(1:length(covNames) - 1) %% length(as.numeric(inScale)) + 1], covNames)
+      scaleFactors <- stats::setNames(as.numeric(inScale)[(1:length(covNames) - 1) %% length(as.numeric(inScale)) + 1], covNames)
     } else {
       scaleFactors[names(inScale)] <- as.numeric(inScale)
     }
@@ -803,7 +805,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
 #' instead scaled around the output of this function.
 #'
 #' @return A list object containing the following elements:
-#' \itemize{
+#' \describe{
 #'  \item{\code{responseValues}}{The values of the response variable}
 #'  \item{\code{responseName}}{The name of the response variable}
 #'  \item{\code{hFunctions}}{Calls to special 'h' functions}
@@ -827,7 +829,7 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
     stop("invalid entry for the model formula object: ", err)
   })
   # Retrieve the relevant model terms
-  outList$terms <- terms(curFormula, specials = c("h", "f"), data = NULL)
+  outList$terms <- stats::terms(curFormula, specials = c("h", "f"), data = NULL)
   # Retrieve the special terms
   hInds <- attr(outList$terms, "special")$h
   if(!is.null(hInds)) {
@@ -844,7 +846,7 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
   # Retrieve the other covariates (that are not special functions)
   outList$covNames <- rownames(attr(outList$terms, "factors"))
   names(outList$covNames) <- outList$covNames
-  outList$covNames <- outList$covNames[!(outList$covNames %in% c(outList$hFunctions, outList$fFunctions, responseName))]
+  outList$covNames <- outList$covNames[!(outList$covNames %in% c(outList$hFunctions, outList$fFunctions, outList$responseName))]
   offsetNames <- c()
   # Tidy the offset variable names
   if(!is.null(attr(outList$terms, "offset"))) {
@@ -852,9 +854,9 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
     outList$covNames[offsetNames] <- gsub("^offset\\(", "", gsub("\\)$", "", outList$covNames[offsetNames], perl = TRUE), perl = TRUE)
   }
   covFrame <- NULL
-  if(class(inData) == "inla.data.stack") {
+  if(inherits(inData, "inla.stack")) {
     # If the input is an INLA data stack object then retrieve the relevant information
-    if(!requireNamespace(INLA, quietly = TRUE)) {
+    if(!requireNamespace("INLA", quietly = TRUE)) {
       stop("handling of INLA stack data requires installation of the 'INLA' package")
     }
     # Retrieve the response variable
@@ -895,7 +897,7 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
       }
       outValues
     }, rhsData = INLA::inla.stack.RHS(inData), aMat = INLA::inla.stack.A(inData)))
-    names(covFrame) <- outlist$covNames
+    names(covFrame) <- outList$covNames
   } else {
     # Retrieve the response values
     if(!is.na(outList$responseName)) {
@@ -929,7 +931,7 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
   # Centre and scale the covariate matrix
   outList$covFrame <- centreScaleCovariates(covFrame, centreCovs, scaleCovs)
   # Convert the covariate frame into a model matrix
-  outList$modelMatrix <- model.matrix(outList$terms, model.frame(outList$terms, outList$covFrame))
+  outList$modelMatrix <- stats::model.matrix(outList$terms, stats::model.frame(outList$terms, outList$covFrame))
   isIFunction <- grepl("^I\\(.*\\)$", outList$covNames, perl = TRUE)
   if(any(isIFunction)) {
     outList$covNames[isIFunction] <- paste("`", outList$covFrame[isIFunction], "`", sep = "")
@@ -959,7 +961,7 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
 #' @keywords internal
 processEllipsisArgs <- function(argsToRetrieve, ...) {
   outArgs <- list()
-  if(is.function(argsToRetreve)) {
+  if(is.function(argsToRetrieve)) {
     # If the input argument is a function then retrieve the argument lists (and
     # their default values from the function definition)
     outArgs <- formals(argsToRetrieve)
@@ -1005,7 +1007,7 @@ processEllipsisArgs <- function(argsToRetrieve, ...) {
 #' specification relating the mean value to the linear model specification.
 #'
 #' @return A list of containing the following named elements:
-#' \itemize{
+#' \describe{
 #'  \item{\code{func}}{A version of the function of the \code{func} argument
 #'  encapsulated such that it has an interface usable by the package}
 #'  \item{\code{invfunv}}{A version of the function of the \code{invfunc}
@@ -1127,7 +1129,7 @@ customLink <- function(func, invfunc, nimbleImp) {
 #' multivariate output from a joint probability distribution.
 #'
 #' @return A list containing the following named elements:
-#' \itemize{
+#' \describe{
 #'  \item{\code{link}}{A list of link functions that are valid for this error
 #'  distribution. Each element is a list containing the output from a call to
 #'  the \code{\link{customLink}} function}
@@ -1142,7 +1144,6 @@ customLink <- function(func, invfunc, nimbleImp) {
 #'  \item{\code{simulate}}{A version of the \code{simulate} function
 #'  encapsulated in such a way as to be usable by the package}
 #' }
-#' @examples
 #'
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link[nimble]{nimbleCode}} \code{\link{customLink}}
@@ -1157,19 +1158,19 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
 #'
 #' @description A function to create a full NIMBLE model definition from a
 #' standard model specification with a syntax similar to that used in the
-#' \link[stats]{\code{glm}} model specification
+#' \code{\link[stats]{glm}} model specification
 #'
 #' @param formula A formula that takes a similar form to that used in
-#' \link[stats]{\code{glm}} except that hierarchical components can be added
-#' to the model specification using the \link{\code{h}} function.  In addition
+#' \code{\link[stats]{glm}} except that hierarchical components can be added
+#' to the model specification using the \code{\link{h}} function.  In addition
 #' it is possible to specify random effects from INLA using the
-#' \link[INLA]{\code{f}} function.
+#' \code{\link[INLA]{f}} function.
 #' @param data A data.frame, list, or inla.data.stack object containing the
 #' data to apply the model formula to.
 #' @param family The specification of the likelihood family to use. The default
 #' is a Gaussian distribution with identity link. The argument can either be
 #' a string containing the name of the likelihood family (case insensitive) or
-#' a \link[stats]{\code{family}} object containing the family and link function
+#' a \code{\link[stats]{family}} object containing the family and link function
 #' specification. If the \code{family} argument is a string then the \code{link}
 #' argument can be used to specify an alternative link function than the default
 #' link function for that distribution. See \code{names(errorFamilites())} for a
@@ -1191,7 +1192,7 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
 #' instead scaled around the output of this function.
 #'
 #' @return A list object containing the following named elements:
-#' \itemize{
+#' \describe{
 #'  \item{\code{responseValues}}{The values of the response variable}
 #'  \item{\code{responseName}}{The name of the response variable}
 #'  \item{\code{hFunctions}}{Calls to special 'h' functions}
@@ -1203,15 +1204,16 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
 #'  covariates performed by \code{\link[stats]{model.matrix}}}
 #'  \item{\code{offetFrame}}{A data frame of offset terms used in the model}
 #'  \item{\code{nimbleCode}}{NIMBLE model specification code for the model
-#'  defined using the input parameters (see \code{\link[nimble]{nimbleCode}})
+#'  defined using the input parameters (see \code{\link[nimble]{nimbleCode}})}
 #' }
 #'
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link[nimble]{nimbleCode}} \code{\link{customLink}}
 #'  \code{\link{customError}} \code{\link{errorFamilies}}
-#'  \code{\link{modelDefinitionToNIMBLE}} \link[stats]{\code{glm}}
+#'  \code{\link{modelDefinitionToNIMBLE}} \code{\link[stats]{glm}}
 #'  \code{\link[INLA]{inla.stack.data}} \code{\link[stats]{model.matrix}}
 #'  \code{\link[nimble]{nimbleCode}}
+#'  @export
 modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE) {
   # TODO: Include model definition code here
 }
