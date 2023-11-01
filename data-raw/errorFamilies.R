@@ -76,6 +76,15 @@ ntrialsSpecify <- function(...) {
 }
 
 ### 1.2 ==== List of supported link functions ====
+#' @title Link Functions
+#'
+#' @description
+#' A list of all the link functions supported natively by the package
+#'
+#' @format A list
+#' @source Package internals
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @noRd
 linkFunctions_raw <- list(
   ### 1.2.1 ---- Identity link function ----
   identity = list(
@@ -141,7 +150,7 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorSD = function(suffix = "") { paste0("errorSD", suffix, " ~ dgamma(0.001, 0.001)") }
+      errorSD = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDSpec) }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -157,7 +166,7 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorSD = function(suffix = "") { paste0("errorSD", suffix, " ~ dgamma(0.001, 0.001)") }
+      errorSD = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDSpec) }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -176,7 +185,7 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorSD = function(suffix = "") { paste0("errorSD", suffix, " ~ dgamma(0.001, 0.001)") }
+      errorSD = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDSpec) }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -234,7 +243,7 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorScale = function(suffix = "") { paste0("errorScale", suffix, " ~ dgamma(0.001, 0.001)") }
+      errorScale = function(suffix = "", errorScaleSpec = "dgamma(0.001, 0.001)") { paste0("errorScale", suffix, " ~ ", errorScaleSpec) }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -254,7 +263,7 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorPrec = function(suffix = "") { paste0("errorPrec", suffix, " ~ dgamma(0.001, 0.001)") }
+      errorPrec = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorPrec", suffix, " ~ ", errorSDSpec) }
     ),
     nimbleConstants = list(
       ntrials = ntrialsSpecify
@@ -275,4 +284,4 @@ errorFamilies_raw <- list(
   )
 )
 
-usethis::use_data(errorFamilies_raw, linkFunctions_raw, internal = TRUE)
+usethis::use_data(errorFamilies_raw, linkFunctions_raw, internal = TRUE, overwrite = TRUE)

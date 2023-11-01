@@ -1053,31 +1053,31 @@ customLink <- function(func, invfunc, nimbleImp) {
   })
   list(
     # Encapsulate the link function
-    func = eval(function(inData) {
+    func = substitute(function(inData) {
       tempFunc <- inFunc
-      outVal <- tryCatch(tempFunc(inData), error = function(err) {
+      outVal <- tryCatch(as.double(tempFunc(inData)), error = function(err) {
         stop("error encountered during application of link function: ", err)
       })
       outVal
     }, list(inFunc = inFunc)),
     # Encapsulate the inverse link function
-    invfunc = eval(function(inData) {
+    invfunc = substitute(function(inData) {
       tempFunc <- inFunc
-      outVal <- tryCatch(tempFunc(inData), error = function(err) {
+      outVal <- tryCatch(as.double(tempFunc(inData)), error = function(err) {
         stop("error encountered during application of inverse link function: ", err)
       })
       outVal
     }, list(inFunc = inInvFunc)),
     # Encapsulate the NIMBLE code specification function
-    nimbleImp = eval(function(outNodeText, expFormText) {
+    nimbleImp = substitute(function(outNodeText, expFormText) {
       tempFunc <- inFunc
       outVal <- tryCatch(as.character(tempFunc(outNodeText, expFormText)), error = function(err) {
-        stop("error encountered during application of NIMBLE code specification function: ", err)
+        stop("error encountered during application of NIMBLE code link specification function: ", err)
       })
       if(is.null(outVal) || length(outVal) <= 0) {
-        stop("error encountered during application of NIMBLE code specification function: NULL of zero-length vector returned")
+        stop("error encountered during application of NIMBLE code link specification function: NULL or zero-length vector returned")
       } else if(length(outVal) > 1) {
-        warning("NIMBLE code specification function returns vector of length greater than one: vector will be concatened with line breaks")
+        warning("NIMBLE code link specification function returns vector of length greater than one: vector will be concatened with line breaks")
         outVal <- paste(outVal, collapse = "\n")
       }
       outVal
@@ -1150,7 +1150,136 @@ customLink <- function(func, invfunc, nimbleImp) {
 #'   \code{\link{errorFamilies}} \code{\link{modelDefinitionToNIMBLE}}
 #' @export
 customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleConstants = list(), link = "identity", discrete = FALSE, elementWise = FALSE) {
-  # TODO: Include custom error distribution processing here
+  # Ensure that the nimbleLikeli parameter is a function
+  inNimbleLikeli <- tryCatch(as.function(nimbleLikeli), error = function(err) {
+    stop("invalid entry for the liklelihood function: ", err)
+  })
+  # Ensure that the simulate parameter is a function
+  inSimulate <- tryCatch(as.function(simulate), error = function(err) {
+    stop("invalid entry for the simulation function: ", err)
+  })
+  # Function to test the validity of the prior and constants arguments
+  allFunctions <- function(inList, canBeConstant = FALSE) {
+    inVec <- list()
+    if(!is.null(inList)) {
+      inVec <- as.list(inList)
+      if(is.null(names(inVec))) {
+        stop("input list must have named elements")
+      }
+      inVec <- stats::setNames(lapply(X = inVec, FUN = function(curElement, canBeConstant) {
+        outElement <- curElement
+        if(!is.numeric(outElement) || !canBeConstant) {
+          outElement <- as.function(curElement)
+          # Encapsulate the function accordingly
+          outElement <- as.function(c(formals(outElement), substitute({
+            outVal <- tryCatch(funcBody, error = function(err) {
+              stop("error encountered during processing of prior and/or constants evaluation function: ", err)
+            })
+            if(is.null(outVal) || length(outVal) <= 0) {
+              stop("error encountered during processing of prior and/or constants evaluation function: NULL or zero-length vector returned")
+            } else if(length(outVal) > 1) {
+              warning("prior and/or constants evaluation function returns vector of length greater than one: vector will be concatened with line breaks")
+              outVal <- paste(outVal, collapse = "\n")
+            }
+            outVal
+          }, list(funcBody = body(outElement)))))
+        }
+        outElement
+      }, canBeConstant = canBeConstant), names(inVec))
+    }
+    inVec
+  }
+  # Ensure that the prior and constants specifications have the correct format
+  inNimblePrior <- tryCatch(allFunctions(nimblePrior, FALSE), error = function(err) {
+    stop("invalid entry for the prior specification: ", err)
+  })
+  inNimbleConstants <- tryCatch(allFunctions(nimbleConstants, TRUE), error = function(err) {
+    stop("invalid entry for the constants specification: ", err)
+  })
+  # Ensure that the link function specifications have the correct format
+  inLink <- "identity"
+  nullValues <- NULL
+  if(is.list(link)) {
+    # If the link input is a list then process the custom link functions
+    if(is.null(names(link))) {
+      stop("invalid entry for the link function specification: input list must have named elements")
+    }
+    inLink <- lapply(X = link, FUN = function(curElement) {
+      outVal <- NULL
+      if(!is.null(curElement)) {
+        outVal <- do.call(customLink, curElement)
+      }
+      outVal
+    })
+    nullValues <- sapply(X = inLink, FUN = is.null)
+  } else {
+    # If the link input is a character vector then respecify it as a list
+    inLink <- tryCatch(as.character(link), error = function(err) {
+      stop("invalid entry for the link function specification: ", err)
+    })
+    inLink <- stats::setNames(replicate(length(inLink), NULL), inLink)
+    nullValues <- rep(TRUE, length(inLink))
+  }
+  if(any(nullValues)) {
+    # If there are any undefined link functions then look up their name and see
+    # if they are a natively-supported link function
+    inLink[nullValues] <- lapply(X = names(inLink), FUN = function(curLinkName) {
+      if(!curLinkName %in% names(linkFunctions_raw)) {
+        stop("invalid entry for the link function specification: ", curLinkName, " is not a natively-supported link function",
+          ", it is possible to define custion link functions using the customLink function")
+      }
+      linkFunctions_raw[[curLinkName]]
+    })
+  }
+  # Small test function to process logical inputs
+  testLogicalScalar <- function(inVal) {
+    outVal <- as.logical(outVal)
+    if(is.null(outVal) || length(outVal) <= 0) {
+      stop("input vector has zero-length")
+    } else if(length(outVal) > 1) {
+      warning("input vector has length greater than one: only the first element will be used")
+      outVal <- outVal[1]
+    }
+    outVal
+  }
+  # Test the discrete and element-wise parameter flags
+  inDiscrete <- tryCatch(testLogicalScalar(discrete), function(err) {
+    stop("invalid entry for the discrete flag: ", err)
+  })
+  inElementWise <- tryCatch(testLogicalScalar(elementWise), function(err) {
+    stop("invalid entry for the element-wise flag: ", err)
+  })
+  # Test to make sure that the simulate function has the correct parameterization
+  if(!all(methods::formalArgs(inSimulate) %in% c("expNode", names(inNimblePrior), names(inNimbleConstants)))) {
+    stop("invalid entry for the simulation function: function arguments can only be entries in the prior or constant specification lists (plus \"expNode\")")
+  }
+  # Test to make sure that the prior specification functions have the correct parameterization
+  if(all(sapply(X = inNimblePrior, FUN = function(curPrior) {
+    "suffix" %in% methods::formalArgs(curPrior)
+  }))) {
+    stop("invalid entry for the prior specification: all specification functions must accept the \"suffix\" argument")
+  }
+  list(
+    link = inLink,
+    # Encapsulate the likelihood function
+    nimbleLikeli = substitute(function(expNode, dataNode, suffix = "") {
+      tempFunc <- inFunc
+      outVal <- tryCatch(as.character(tempFunc(expNode, dataNode, suffix)), error = function(err) {
+        stop("error encountered during application of likelihood function: ", err)
+      })
+      outVal
+    }, list(inFunc = inNimbleLikeli)),
+    nimblePrior = inNimblePrior,
+    nimbleConstants = inNimbleConstants,
+    elementWise = inElementWise,
+    discrete = inDiscrete,
+    # Encapsulate the simulation function
+    simulate = as.function(c(formals(inSimulate), substitute({
+      tryCatch(funcBody, error = function(err) {
+        stop("error encountered during application of simulation function: ", err)
+      })
+    }, list(funcBody = body(inSimulate)))))
+  )
 }
 
 ### 1.12 ==== Convert Model Definition to NIMBLE Code ====
