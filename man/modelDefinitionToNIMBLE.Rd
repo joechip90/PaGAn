@@ -10,7 +10,8 @@ modelDefinitionToNIMBLE(
   family = "gaussian",
   link = "identity",
   centreCovs = TRUE,
-  scaleCovs = TRUE
+  scaleCovs = TRUE,
+  suffix = ""
 )
 }
 \arguments{
@@ -49,6 +50,9 @@ model should be scaled before the analysis: each covariate element is divided
 by its standard deviation. \code{scaleCovs} can also be a function with one
 argument that is a vector of covariate values. In this case the variable is
 instead scaled around the output of this function.}
+
+\item{suffix}{A character scalar that will be appended to all variables used
+in the NIMBLE code (including constants and data)}
 }
 \value{
 A list object containing the following named elements:

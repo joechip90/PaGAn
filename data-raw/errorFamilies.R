@@ -1,3 +1,11 @@
+# Setup a temporary environment to hold the internal data elements
+outputEnv <- new.env()
+# Load the existing internal data into the temporary environment
+outputFile <- file.path(usethis::proj_get(), "R", "sysdata.rda")
+if(file.exists(outputFile)) {
+  load(outputFile, envir = outputEnv, verbose = TRUE)
+}
+
 ### 1.1 ==== Utility functions used in the internal data creation process ====
 
 ### 1.1.1 ---- Setup the ntrial constant in regression models ----
@@ -85,7 +93,7 @@ ntrialsSpecify <- function(...) {
 #' @source Package internals
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @noRd
-linkFunctions_raw <- list(
+outputEnv$linkFunctions_raw <- list(
   ### 1.2.1 ---- Identity link function ----
   identity = list(
     func = function(inData) { inData },
@@ -140,7 +148,7 @@ linkFunctions_raw <- list(
 #' @source Package internals
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @noRd
-errorFamilies_raw <- list(
+outputEnv$errorFamilies_raw <- list(
   ### 1.3.1 ---- Specify the components of gaussian regression modelling ----
   gaussian = list(
     link = c("identity", "log"),
@@ -150,7 +158,10 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorSD = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDSpec) }
+      errorSD = function(suffix = "", errorSDPrior = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDPrior) }
+    ),
+    nimbleInits = list(
+      errorSD = function(...) { responseSummary(..., na.rm = TRUE, summaryFunc = stats::sd) }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -166,7 +177,10 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorSD = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDSpec) }
+      errorSD = function(suffix = "", errorSDPrior = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDPrior) }
+    ),
+    nimbleInits = list(
+      errorSD = function(...) { responseSummary(..., na.rm = TRUE, summaryFunc = stats::sd) }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -185,7 +199,10 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorSD = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDSpec) }
+      errorSD = function(suffix = "", errorSDPrior = "dgamma(0.001, 0.001)") { paste0("errorSD", suffix, " ~ ", errorSDPrior) }
+    ),
+    nimbleInits = list(
+      errorSD = function(...) { responseSummary(..., na.rm = TRUE, summaryFunc = stats::sd) }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -207,6 +224,7 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(),
+    nimbleInits = list(),
     nimbleConstants = list(),
     elementWise = TRUE,
     discrete = TRUE,
@@ -223,6 +241,7 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(),
+    nimbleInits = list(),
     nimbleConstants = list(
       ntrials = ntrialsSpecify
     ),
@@ -243,7 +262,15 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorScale = function(suffix = "", errorScaleSpec = "dgamma(0.001, 0.001)") { paste0("errorScale", suffix, " ~ ", errorScaleSpec) }
+      errorScale = function(suffix = "", errorScalePrior = "dgamma(0.001, 0.001)") { paste0("errorScale", suffix, " ~ ", errorScalePrior) }
+    ),
+    nimbleInits = list(
+      errorScale = function(...) {
+        # Initialise the scale parameter in a reasonable way
+        respVar <- responseSummary(..., na.rm = TRUE, summaryFunc = stats::var)
+        respMean <- responseSummary(..., na.rm = TRUE, summaryFunc = mean)
+        max((respVar / respMean - 1.0) * (1.0 / respMean), 1.0)
+      }
     ),
     nimbleConstants = list(),
     elementWise = TRUE,
@@ -263,7 +290,10 @@ errorFamilies_raw <- list(
       "}"
     ) },
     nimblePrior = list(
-      errorPrec = function(suffix = "", errorSDSpec = "dgamma(0.001, 0.001)") { paste0("errorPrec", suffix, " ~ ", errorSDSpec) }
+      errorPrec = function(suffix = "", errorPrecPrior = "dgamma(0.001, 0.001)") { paste0("errorPrec", suffix, " ~ ", errorPrecPrior) }
+    ),
+    nimbleInits = list(
+      errorPrec = function(...) { 1.0 / responseSummary(..., na.rm = TRUE, summaryFunc = stats::var) }
     ),
     nimbleConstants = list(
       ntrials = ntrialsSpecify
@@ -284,4 +314,5 @@ errorFamilies_raw <- list(
   )
 )
 
-usethis::use_data(errorFamilies_raw, linkFunctions_raw, internal = TRUE, overwrite = TRUE)
+# Save the internal data objects
+eval(parse(text = paste0("usethis::use_data(", paste(names(outputEnv), collapse = ", "), ", internal = TRUE, overwrite = TRUE)")), envir = outputEnv)

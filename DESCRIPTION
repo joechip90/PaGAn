@@ -22,9 +22,9 @@ Imports:
     nimble,
     parallelly,
     coda,
-    INLA
+    inlabru
 Suggests:
-    testthat (>= 2.1.0),
+    testthat (>= 3.0.0),
     knitr,
     rmarkdown
 Enhances:
@@ -33,3 +33,4 @@ VignetteBuilder:
     knitr
 LazyData: true
 Depends: R (>= 4.3.0)
+Config/testthat/edition: 3

@@ -4,7 +4,7 @@
 \alias{makeBUGSFriendlyNames}
 \title{Ensure That a Variable Name is BUGS-Compliant}
 \usage{
-makeBUGSFriendlyNames(inNames, warnType = NA)
+makeBUGSFriendlyNames(inNames, warnType = NA, allowLeadingUnderscore = FALSE)
 }
 \arguments{
 \item{inNames}{A character vector of variable names to ensure are
@@ -15,6 +15,11 @@ the user if the variable names provided in \code{inNames} are non-compliant.
 \code{"message"}, \code{"warning"}, or \code{"error"} gives a message,
 warning, or error respectively. All other values for \code{warnType} result
 in no feedback being given to the user}
+
+\item{allowLeadingUnderscore}{A logical scalar denoting whether leading
+undercores are allowed in the name.  This is usually not acceptable naming
+convention (hence the default to \code{FALSE}) but can be useful when
+processing suffix names}
 }
 \value{
 A character vector of BUGS-compliant variable names

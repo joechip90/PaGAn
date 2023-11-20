@@ -542,6 +542,10 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
 #' \code{"message"}, \code{"warning"}, or \code{"error"} gives a message,
 #' warning, or error respectively. All other values for \code{warnType} result
 #' in no feedback being given to the user
+#' @param allowLeadingUnderscore A logical scalar denoting whether leading
+#' undercores are allowed in the name.  This is usually not acceptable naming
+#' convention (hence the default to \code{FALSE}) but can be useful when
+#' processing suffix names
 #'
 #' @return A character vector of BUGS-compliant variable names
 #' @examples
@@ -556,7 +560,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link[nimble]{nimbleCode}}
 #' @export
-makeBUGSFriendlyNames <- function(inNames, warnType = NA) {
+makeBUGSFriendlyNames <- function(inNames, warnType = NA, allowLeadingUnderscore = FALSE) {
   # Sanity-check the feedback parameter
   inWarn <- tryCatch(as.character(warnType), error = function(err) {
     as.character(NA)
@@ -566,6 +570,16 @@ makeBUGSFriendlyNames <- function(inNames, warnType = NA) {
   } else if(length(inWarn) > 1) {
     warning("user-feedback argument length greater than one: only the first element will be used")
     inWarn <- inWarn[1]
+  }
+  # Sanity-check the underscore allowance parameter
+  inUnderscore <- tryCatch(as.logical(allowLeadingUnderscore), error = function(err) {
+    stop("error encoutnered during processing of underscore argument: ", err)
+  })
+  if(length(inUnderscore) <= 0) {
+    inUnderscore <- FALSE
+  } else if(length(inUnderscore) > 1) {
+    warning("underscore argument length greater than one: only the first element will be used")
+    inUnderscore <- inUnderscore[1]
   }
   # Sanity-check the input names
   outNames <- tryCatch(as.character(inNames), error = function(err) {
@@ -581,8 +595,10 @@ makeBUGSFriendlyNames <- function(inNames, warnType = NA) {
     outNames <- gsub("^", "pow", outNames, fixed = TRUE)
     # Remove non-allowed characters from the names
     outNames <- gsub("\\W", "_", outNames, perl = TRUE)
-    # Remove any leading underscores
-    outNames <- gsub("^_+", "", outNames, perl = TRUE)
+    # Remove any leading underscores (if needed)
+    if(!inUnderscore) {
+      outNames <- gsub("^_+", "", outNames, perl = TRUE)
+    }
     # Ensure the names does not start with a numeric character
     outNames <- paste(ifelse(
       grepl("^\\d+", outNames, perl = TRUE), "n", ""
@@ -619,7 +635,7 @@ makeBUGSFriendlyNames <- function(inNames, warnType = NA) {
 processSuffix <- function(modelSuffix = "") {
   inSuffix <- ""
   if(!is.null(modelSuffix)) {
-    inSuffix <- tryCatch(makeBUGSFriendlyNames(as.character(modelSuffix), "warning"), error = function(err) {
+    inSuffix <- tryCatch(makeBUGSFriendlyNames(as.character(modelSuffix), "warning", TRUE), error = function(err) {
       stop("error encountered during processing of model suffix: ", err)
     })
     if(length(inSuffix) == 0) {
@@ -810,6 +826,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
 #'  \item{\code{responseName}}{The name of the response variable}
 #'  \item{\code{hFunctions}}{Calls to special 'h' functions}
 #'  \item{\code{fFunctions}}{Calls to special 'f' functions}
+#'  \item{\code{sFunctions}}{Calls to special 's' functions}
 #'  \item{\code{covNames}}{The names of the covariates used in the model
 #'  specification and equivalent valid names to use in the NIMBLE model}
 #'  \item{\code{covFrame}}{A data frame of the processed covariates}
@@ -821,15 +838,15 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
 #' @keywords internal
 processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs = TRUE) {
   # Initialise an output list
-  outList <- list(terms = NULL, responseValues = numeric(), responseName = character(NA),
-    hFunctions = character(), fFunctions = character(), covNames = character(),
+  outList <- list(terms = NULL, responseValues = numeric(), responseName = as.character(NA),
+    hFunctions = character(), fFunctions = character(), smoothFunctions = character(), covNames = character(),
     covFrame = data.frame(), modelMatrix = matrix(nrow = 0, ncol = 0), offsetFrame = NULL)
   # Sanity check the model formula
   curFormula <- tryCatch(stats::as.formula(inFormula), error = function(err) {
     stop("invalid entry for the model formula object: ", err)
   })
   # Retrieve the relevant model terms
-  outList$terms <- stats::terms(curFormula, specials = c("h", "f"), data = NULL)
+  outList$terms <- stats::terms(curFormula, specials = c("h", "f", "s", "te", "ti", "t2"), data = NULL)
   # Retrieve the special terms
   hInds <- attr(outList$terms, "special")$h
   if(!is.null(hInds)) {
@@ -838,6 +855,16 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
   fInds <- attr(outList$terms, "special")$f
   if(!is.null(fInds)) {
     outList$fFunctions <- rownames(attr(outList$terms, "factors"))[fInds]
+  }
+  sInds <- c(
+    # Retrieve all the smoother terms that mgcv uses
+    attr(outList$terms, "special")$s,
+    attr(outList$terms, "special")$te,
+    attr(outList$terms, "special")$ti,
+    attr(outList$terms, "special")$t2
+  )
+  if(!is.null(sInds)) {
+    outList$smoothFunctions <- rownames(attr(outList$terms, "factors"))[sInds]
   }
   # Retrieve the response variable information
   if(attr(outList$terms, "response") != 0) {
@@ -913,33 +940,41 @@ processModelFormula <- function(inFormula, inData, centreCovs = TRUE, scaleCovs 
     }, covList = as.list(inData)))
     names(covFrame) <- outList$covNames
   }
-  respLength <- length(outList$responseValues)
-  if(!is.null(dim(outList$responseValues))) {
-    respLength <- dim(outList$responseValues)[1]
-  }
-  if(respLength != nrow(covFrame)) {
-    stop("response variable and fixed covariate lengths do not match")
+  respLength <- nrow(covFrame)
+  if(!is.null(outList$responseValues)) {
+    respLength <- length(outList$responseValues)
+    if(!is.null(dim(outList$responseValues))) {
+      respLength <- dim(outList$responseValues)[1]
+    }
+    if(respLength != nrow(covFrame)) {
+      stop("response variable and fixed covariate lengths do not match")
+    }
   }
   # Process the offset variables
   if(length(offsetNames) > 0) {
     inOffNames <- outList$covNames[offsetNames]
     outList$offsetFrame <- covFrame[, inOffNames, drop = FALSE] # Put the offset variables in a seperate data frame
     nonOffset <- !(colnames(covFrame) %in% inOffNames)
-    covFrame <- covFrame[, nonOffset]                           # Take the offset variables out of the covariate data frame
+    covFrame <- covFrame[, nonOffset, drop = FALSE]             # Take the offset variables out of the covariate data frame
     outList$covNames <- outList$covNames[nonOffset]             # Remove the offset variables from the covariate list
   }
   # Centre and scale the covariate matrix
   outList$covFrame <- centreScaleCovariates(covFrame, centreCovs, scaleCovs)
   # Convert the covariate frame into a model matrix
-  outList$modelMatrix <- stats::model.matrix(outList$terms, stats::model.frame(outList$terms, outList$covFrame))
+  tempCovFrame <- outList$covFrame
+  if(!is.na(outList$responseName)) {
+    tempCovFrame <- cbind(as.data.frame(stats::setNames(list(outList$responseValues), outList$responseName)), tempCovFrame)
+  }
+  outList$modelMatrix <- stats::model.matrix(outList$terms, stats::model.frame(outList$terms, tempCovFrame))
   isIFunction <- grepl("^I\\(.*\\)$", outList$covNames, perl = TRUE)
   if(any(isIFunction)) {
     outList$covNames[isIFunction] <- paste("`", outList$covFrame[isIFunction], "`", sep = "")
     colnames(outList$covFrame) <- outList$covNames
   }
   # Produce nimble-friendly versions of the covariate names
-  outList$covNames <- rbind(outList$covNames, makeBUGSFriendlyNames(outList$covNames))
-  rownames(outList$covNames) <- c("frameName", "nimbleName")
+  bugsFriendlyCovs <- makeBUGSFriendlyNames(outList$covNames)
+  outList$covNames <- rbind(outList$covNames, bugsFriendlyCovs, paste0(bugsFriendlyCovs, "Coeff"))
+  rownames(outList$covNames) <- c("frameName", "nimbleName", "coefficientName")
   outList
 }
 
@@ -1282,7 +1317,38 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
   )
 }
 
-### 1.12 ==== Convert Model Definition to NIMBLE Code ====
+### 1.12 ==== Retrieve a summary statistic of the response variable ====
+#' @title Retrieve a summary statistic of the response variable
+#'
+#' @description A small utility function to retrieve a particular summary of
+#' the response variable to help initialise set the MCMC in regression models
+#'
+#' @param ... Parameters passed to the \code{link{processModelFormula}} function
+#' for retrieval of the relevant parameters and data.  Parameters are also
+#' passed to the summary function.
+#' @param summaryFunc A function to apply to the response variable
+#'
+#' @return A numeric scalar with the summary statistic of the response variable
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @keywords internal
+responseSummary <- function(..., summaryFunc) {
+  outVal <- NA
+  inArgs <- substitute(alist(...))
+  # Retrieve the arguments passed to the function that are relevant to the model processing arguments
+  modelProcessArguments <- processEllipsisArgs(processModelFormula, ...)
+  # Process the model formula to retrieve the response variable
+  responseValues <- tryCatch(do.call(processModelFormula, modelProcessArguments)$responseValues, error = function(err) {
+    stop("error encountered during retrieval of response variable: ", err)
+  })
+  if(!is.null(responseValues)) {
+    summaryArguments <- processEllipsisArgs(summaryFunc, ...)
+    summaryArguments[[1]] <- responseValues
+    outVal <- do.call(summaryFunc, summaryArguments)
+  }
+  outVal
+}
+
+### 1.14 ==== Convert Model Definition to NIMBLE Code ====
 #' @title Convert a Model Definition into NIMBLE Code
 #'
 #' @description A function to create a full NIMBLE model definition from a
@@ -1319,6 +1385,14 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
 #' by its standard deviation. \code{scaleCovs} can also be a function with one
 #' argument that is a vector of covariate values. In this case the variable is
 #' instead scaled around the output of this function.
+#' @param suffix A character scalar that will be appended to all variables used
+#' in the NIMBLE code (including constants and data)
+#' @param sharedTermNode A character containing the name of a node containing
+#' the expectation that is shared across different likelihoods. Defaults to
+#' \code{NULL} and this default should be used in most cases where the
+#' model specification isn't being combined with a larger model component
+#' @param ... Other parameters that are passed to the error distribution
+#' processing functions
 #'
 #' @return A list object containing the following named elements:
 #' \describe{
@@ -1326,6 +1400,7 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
 #'  \item{\code{responseName}}{The name of the response variable}
 #'  \item{\code{hFunctions}}{Calls to special 'h' functions}
 #'  \item{\code{fFunctions}}{Calls to special 'f' functions}
+#'  \item{\code{sFunctions}}{Calls to special 's' functions}
 #'  \item{\code{covNames}}{The names of the covariates used in the model
 #'  specification and equivalent valid names to use in the NIMBLE model}
 #'  \item{\code{covFrame}}{A data frame of the processed covariates}
@@ -1343,6 +1418,307 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
 #'  \code{\link[INLA]{inla.stack.data}} \code{\link[stats]{model.matrix}}
 #'  \code{\link[nimble]{nimbleCode}}
 #'  @export
-modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE) {
-  # TODO: Include model definition code here
+modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE, suffix = "", sharedTermNode = NULL, ...) {
+  ### 1.12.1 ---- Sanity check the error distribution specification ----
+  inFamily <- family
+  curLink <- linkFunctions_raw[["identity"]]
+  if(!is.null(inFamily)) {
+    # Process the error family entry if it is a character
+    if(is.character(inFamily)) {
+      if(length(inFamily) <= 0) {
+        stop("invalid entry for the error distribution family specification: argument has zero length")
+      } else if(length(inFamily) > 1) {
+        warning("error distribution family specification has a legth greater than one: only the first argument will be used")
+        inFamily <- inFamily[1]
+      }
+      if(is.na(inFamily)) {
+        inFamily <- "gaussian"
+      }
+      if(!(tolower(inFamily) %in% names(errorFamilies_raw))) {
+        stop("invalid entry for the error distribution family specification: ", inFamily, " is not a natively-supported",
+          " error distribution, it is possible to specify custom error distributions using the customError function")
+      }
+      inFamily <- errorFamilies_raw[[tolower(inFamily)]]
+    } else {
+      # Process the error family entry if it is something else (such as a custom error distribution)
+      inFamily <- tryCatch(do.call(customError, as.list(inFamily)), error = function(err) {
+        stop("invalid entry for the error distribution family specification: ", err)
+      })
+    }
+    if(is.character(inFamily$link)) {
+      # If the family is a character vector then check to make sure the entries exist in the natively-supported link functions
+      # and, if so, retrieve the relevant link specification
+      inFamily$link <- stats::setNames(lapply(X = inFamily$link, FUN = function(curLinkName) {
+        if(!(tolower(curLinkName) %in% names(linkFunctions_raw))) {
+          stop("invalid entry for the link function specification: ", curLinkName, " is not a natively-supported",
+            " link function, it is possible to specify custom link functions using the customLink function")
+        }
+        linkFunctions_raw[[tolower(curLinkName)]]
+      }), inFamily$link)
+    }
+    nullLinkElements <- sapply(X = inFamily$link, FUN = is.null)
+    # If there are any elements that are NULL then check to see if the relevant named elements exist in the list of natively-supported
+    # link functions
+    if(any(nullLinkElements)) {
+      inFamily$link[nullLinkElements] <- lapply(X = names(inFamily$link)[nullLinkElements], FUN = function(curLinkName) {
+        if(!(tolower(curLinkName) %in% names(linkFunctions_raw))) {
+          stop("invalid entry for the link function specification: ", curLinkName, " is not a natively-supported",
+             " link function, it is possible to specify custom link functions using the customLink function")
+        }
+        linkFunctions_raw[[tolower(curLinkName)]]
+      })
+    }
+    ### 1.12.2 ---- Sanity check the link function ----
+    curLink <- inFamily$link[[1]]
+    if(!is.null(link)) {
+      if(length(link) <= 0) {
+        stop("invalid entry for the link function specification: argument has length zero")
+      } else if(length(link) > 1) {
+        warning("length of the link specification argument: only the first element will be used")
+        link <- link[1]
+      }
+      if(is.numeric(link)) {
+        if(link <= 0 || link > length(inFamily$link)) {
+          stop("invalid entry for the link function specification: index out of bounds")
+        }
+        if(!is.na(link)) {
+          # If the link entry is a number then look-up the relevant link index
+          curLink <- inFamily$link[[as.integer(link)]]
+        }
+      } else {
+        tempLink <- tryCatch(as.character(link), error = function(err) {
+          stop("invalid entry for the link function specification: ", err)
+        })
+        if(length(tempLink) <= 0) {
+          stop("invalid entry for the link function specification: argument has length zero")
+        } else if(length(tempLink) > 1) {
+          warning("length of the link specification argument greater than one: only the first element will be used")
+          tempLink <- tempLink[1]
+        }
+        if(!(tempLink %in% names(inFamily$link))) {
+          stop("invalid entry for the link function specification: link function is not one that is supported by the errror distribution")
+        }
+        curLink <- inFamily$link[[tempLink]]
+      }
+    }
+  }
+  ### 1.12.3 ---- Sanity check the model suffix ----
+  inSuffix <- processSuffix(suffix)
+  ### 1.12.4 ---- Sanity check the shared term node ----
+  inSharedTermNode <- NULL
+  if(!is.null(sharedTermNode)) {
+    inSharedTermNode <- tryCatch(as.character(sharedTermNode), error = function(err) {
+      stop("invalid entry for the shared term node name: ", err)
+    })
+    if(length(inSharedTermNode) <= 0) {
+      inSharedTermNode <- NULL
+    } else if(length(inSharedTermNode) > 1) {
+      warning("length of the shared term node name argument greater than one: only the first element will be used")
+      inSharedTermNode <- inSharedTermNode[1]
+    }
+    if(is.na(inSharedTermNode)) {
+      inSharedTermNode <- NULL
+    }
+  }
+  ### 1.12.5 ---- Create the model matrix ----
+  # Use the model inputs to create a model matrix
+  modMatrix <- processModelFormula(inFormula = formula, inData = data, centreCovs = centreCovs, scaleCovs = scaleCovs)
+  ### 1.12.6 ---- Produce the BUGS formulation ----
+  # Initialise the NIMBLE arguments
+  nimbleArgs <- list(
+    code = character(),
+    constants = list(),
+    data = list(),
+    inits = list(),
+    dimensions = list(),
+    monitors = character(),
+    monitors2 = character()
+  )
+  expNodeTextInput <- c()
+  priorText <- c()
+  # Make a list of all the parameters that have been entered
+  allParams <- c(alist(formula = formula, data = data, family = family, link = link, centreCovs = centreCovs, scaleCovs = scaleCovs, suffix = suffix), substitute(alist(...)))
+  if(!is.null(inFamily)) {
+    # If the error distribution requires extra constants to be defined then do that
+    if(length(inFamily$nimbleConstants) > 0) {
+      nimbleArgs$constants <- stats::setNames(lapply(X = inFamily$nimbleConstants, FUN = function(curConstantFunc, inParams) {
+        # Retrieve the parameters that the constant function requires
+        curParams <- do.call(processEllipsisArgs, c(alist(argsToRetrieve = curConstantFunc), inParams))
+        # Call the constant specification function with the relevant parameters
+        tryCatch(as.numeric(do.call(curConstantFunc, curParams)), error = function(err) {
+          stop("error encountered processing constants related to the error distribution: ", err)
+        })
+      }, inParams = allParams), names(inFamily$nimbleConstants))
+    }
+    # If the error distribution requires that prior text be defined then do that
+    if(length(inFamily$nimblePrior) > 0) {
+      # Set the prior text in the code
+      priorText <- stats::setNames(sapply(X = inFamily$nimblePrior, FUN = function(curPriorSpec, inParams) {
+        # Retrieve the parameters that the prior function requires
+        curParams <- do.call(processEllipsisArgs, c(alist(argsToRetrieve = curPriorSpec), inParams))
+        # Call the prior specification function
+        tryCatch(as.character(do.call(curPriorSpec, curParams)), error = function(err) {
+          stop("error encountered processing prior specifications related to the error distribution: ", err)
+        })
+      }, inParams = allParams), paste0(names(inFamily$nimblePrior), inSuffix))
+      # Add the prior parameters to the monitor list
+      nimbleArgs$monitors <- paste0(names(inFamily$nimblePrior), inSuffix)
+      nimbleArgs$inits <- stats::setNames(lapply(X = inFamily$nimbleInits, FUN = function(curInitFunc, inParams) {
+        # Retrieve the parameters that the initialisation function requires
+        curParams <- do.call(processEllipsisArgs, c(alist(argsToRetrieve = curInitSpec), inParams))
+        # Call the initialisation function with the relevant parameters
+        tryCatch(do.call(curInitFunc, curParams), error = function(err) {
+          stop("error encountered processing initialisation of parameters related to the error distribution: ", err)
+        })
+      }, inParams = allParams), nimbleArgs$monitors)
+    }
+  }
+  # A default function for a wide prior on fixed effects that can be overridden from the command line
+  fixedWidePrior <- function(coeffName, ...) {
+    argName <- paste0(coeffName, "Prior")
+    inValue <- tryCatch(as.character(processEllipsisArgs(argName, ...)[["argName"]]), error = function(err) {
+      stop("error encountered when processing prior effects specification for ", coeffName)
+    })
+    if(is.null(inValue) || length(inValue) <= 0) {
+      inValue <- NA
+    } else if(length(inValue) > 1) {
+      warning("argument provided for prior effects specification for ", coeffName, " has length greater than one: only the first element will be used")
+      inValue <- inValue[1]
+    }
+    if(is.na(inValue) || inValue == "") {
+      inValue <- "dnorm(0.0, 0.001)"
+    }
+    inValue
+  }
+  if(attr(modMatrix$terms, "intercept") >= 1) {
+    # Add an intercept term to the model if it appears in the specification
+    expNodeTextInput <- paste0("intercept", inSuffix)
+    nimbleArgs$monitors <- c(nimbleArgs$monitors, expNodeTextInput)
+    # Calculate a default initialisation value for the intercept value
+    nimbleArgs$inits <- append(nimbleArgs$inits, stats::setNames(list(
+      ifelse(is.null(modMatrix$responseValues), 0.0, curLink$invfunc(mean(modMatrix$responseValues, na.rm = TRUE)))
+    ), expNodeTextInput))
+    priorText <- c(priorText, stats::setNames(paste(expNodeTextInput, "~", fixedWidePrior("intercept", ...)), expNodeTextInput))
+  }
+  if(length(modMatrix$covNames) > 0) {
+    # If there are fixed effects then add these to the NIMBLE specification
+    expNodeTextInput <- c(expNodeTextInput, paste0(modMatrix$covNames["nimbleName", ], inSuffix, "[1:ndata", inSuffix, "] * ", modMatrix$covNames["coefficientName", ], inSuffix))
+    nimbleArgs$monitors <- c(nimbleArgs$monitors, paste0(modMatrix$covNames["coefficientName", ], inSuffix))
+    nimbleArgs$inits <- append(nimbleArgs$inits, stats::setNames(replicate(ncol(modMatrix$covNames), 0.0, simplify = FALSE), paste0(modMatrix$covNames["coefficientName", ], inSuffix)))
+    nimbleArgs$constants <- append(nimbleArgs$constants, stats::setNames(as.list(modMatrix$covFrame), paste0(modMatrix$covNames["nimbleName", colnames(modMatrix$covFrame)], inSuffix)))
+    priorText <- c(priorText, stats::setNames(
+      paste0(modMatrix$covNames["coefficientName", ], inSuffix, " ~ ", sapply(X = modMatrix$covNames["frameName", ], FUN = fixedWidePrior, ...))
+    ), paste0(modMatrix$covNames["coefficientName", ], inSuffix))
+  }
+  # Add the offset terms if they are present
+  if(!is.null(modMatrix$offsetFrame)) {
+    totalOffset <- apply(X = as.matrix(modMatrix$offsetFrame), FUN = sum, MARGIN = 1)
+    nimbleArgs$constants <- append(nimbleArgs$constants, stats::setNames(list(totalOffset), paste0("totalOffset", inSuffix)))
+    expNodeTextInput <- c(expNodeTextInput, paste0("totalOffset", inSuffix, "[1:ndata", inSuffix, "]"))
+  }
+  # Include the hierarchical model terms if they are present
+  hierAttributes <- NULL
+  if(length(modMatrix$hFunctions) > 0) {
+    ### 1.12.7 ---- Add hierarchical model terms ----
+    hierList <- lapply(modMatrix$hFunctions, FUN = function(curFuncText, inSuffix) {
+      callArguments <- parse(text = gsub("\\)$", paste0(", parentSuffix = \"", inSuffix, "\")"), gsub("^h\\(", "alist(", curFuncText, perl = TRUE), perl = TRUE))
+      do.call(h, callArguments)
+    }, inSuffix = inSuffix)
+    # Integrate the hierarchical model terms into the model build list
+    nimbleArgs$code <- paste(sapply(X = hierList, FUN = function(curHier) {
+      paste(curHier$code, collapse = "\n")
+    }), collapse = "\n")
+    nimbleArgs$constants <- append(nimbleArgs$constants, unlist(lapply(X = hierList, FUN = function(curHier) {
+      tryCatch(as.list(curHier$constants), error = function(err) {
+        stop("error encountered during processing of constants in hierarchcial model specification: ", err)
+      })
+    })))
+    nimbleArgs$data <- append(nimbleArgs$data, unlist(lapply(X = hierList, FUN = function(curHier) {
+      tryCatch(as.list(curHier$data), error = function(err) {
+        stop("error encountered during processing of data in hierarchical model specification: ", err)
+      })
+    })))
+    nimbleArgs$inits <- append(nimbleArgs$inits, unlist(lapply(X = hierList, FUN = function(curHier) {
+      tryCatch(as.list(curHier$inits), error = function(err) {
+        stop("error encountered during processing of initialisation values in hierachical model specification: ", err)
+      })
+    })))
+    nimbleArgs$monitors <- c(nimbleArgs$monitors, unlist(lapply(X = hierList, FUN = function(curHier) {
+      tryCatch(as.character(curHier$monitors), error = function(err) {
+        stop("error encountered during processing of the node monitor names in hierarchical model specification: ", err)
+      })
+    })))
+    nimbleArgs$monitors2 <- c(nimbleArgs$monitors2, unlist(lapply(X = hierList, FUN = function(curHier) {
+      tryCatch(as.character(curHier$monitors2), error = function(err) {
+        stop("error encountered during processing of the node monitor names in hierarchical model specification: ", err)
+      })
+    })))
+    # Retrieve the names of the hierarchical effects
+    hEffectNames <- sapply(X = hierList, FUN = function(curHier) {
+      outText <- tryCatch(as.character(curHier$name), error = function(err) {
+        stop("error encountered during processing of the hierarchical component name in the hierarchical model specification: ", err)
+      })
+      if(length(outText) <= 0) {
+        stop("error encountered during processing of the hierarchical component name in the hierarchical model specification: name vector has length zero")
+      } else if(length(outText) > 1) {
+        warning("name vector has length greater than one: only the first element will be used")
+        outText <- outText[1]
+      }
+      if(is.na(outText) || outText == "") {
+        stop("error encountered during processing of the hierarchical component name in the hierarchical model specification: name is NA")
+      }
+      makeBUGSFriendlyNames(outText, warnType = "warning")
+    })
+    # Add any attributes set by the hierarchical terms
+    hierAttributes <- stats::setNames(lapply(X = hierList, FUN = function(curHier) {
+      attributes(curHier)
+    }), hEffectNames)
+    # Update the linear predictor text
+    expNodeTextInput <- c(expNodeTextInput, paste0(hEffectNames, inSuffix, "[1:ndata", inSuffix, "]"))
+  }
+  if(length(modMatrix$smoothFunctions) > 0) {
+    ### 1.12.8 ---- Add mgcv smooth terms ----
+    # Not yet supported
+    stop("support for mgcv smooth functions in model formulae has not yet been implemented")
+  }
+  if(length(modMatrix$fFunctions) > 0) {
+    stop("support for INLA functions is done through the 'nimbla' function")
+  }
+  ### 1.12.9 ---- Add the code for the linear predictor ----
+  finalResponseName <- ifelse(is.na(modMatrix$responseName), "response", modMatrix$responseName)
+  # Add the code for the linear predictor
+  nimbleArgs$code <- paste(c(
+    nimbleArgs$code,
+    paste("# Set the prior distribution for the arguments used in the likelihood calculation for", finalResponseName),
+    priorText,
+    paste("# Calculate the linear predictor for", finalResponseName),
+    curLink$nimbleImp(paste0(finalResponseName, "Pred", inSuffix, "[1:ndata", inSuffix, "]"), paste(expNodeTextInput, collapse = " + "))
+  ), collapse = "\n")
+  # Add the constant containing the number of data points
+  ndataInput <- nrow(modMatrix$modelMatrix)
+  nimbleArgs$constants <- c(nimbleArgs$constants, stats::setNames(list(ndataInput), paste0("ndata", inSuffix)))
+  # Add a monitor for the prediction node
+  nimbleArgs$monitor2 <- c(nimbleArgs$monitors2, paste0(finalResponseName, "Pred", inSuffix))
+  ### 1.12.10 --- Add the code for the error distribution ----
+  if(!is.null(inFamily)) {
+    # Add the code for the error distribution
+    nimbleArgs$code <- paste(c(
+      nimbleArgs$code,
+      paste("# Set the likelihood for", finalResponseName),
+      inFamily$nimbleLikeli(paste0(finalResponseName, "Pred"), finalResponseName, inSuffix)
+    ), collapse = "\n")
+    # Add the data for the calculation of the likelihood
+    if(!is.null(modMatrix$responseValues)) {
+      nimbleArgs$data <- c(nimbleArgs$data, stats::setNames(list(modMatrix$responseValues), paste0(finalResponseName, inSuffix)))
+    }
+  }
+  ### 1.12.11 ---- Return the model components ----
+  # Return a list of all the model components needed to run the model in NIMBLE
+  list(
+    nimbleArgs = nimbleArgs,          # Arguments to pass to NIMBLE
+    hierAttributes = hierAttributes,  # Extra attributes returned by the hierarchical model specifications
+    modelMatrix = modMatrix,          # The model matrix
+    link = curLink,                   # The link function
+    family = inFamily                 # The error family distribution
+  )
 }
