@@ -69,10 +69,10 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
     compileNimble = formals(nimble::compileNimble),
     runMCMC = formals(nimble::runMCMC)
   )
-  if(requireNamespace("INLA", quietly = TRUE)) {
-    # If the INLA package is installed then also retrieve the arguments of the inla function
-    nimbleArgs <- append(nimbleArgs, list(inla = formals(INLA::inla)))
-  }
+  #if(requireNamespace("INLA", quietly = TRUE)) {
+  #  # If the INLA package is installed then also retrieve the arguments of the inla function
+  #  nimbleArgs <- append(nimbleArgs, list(inla = formals(INLA::inla)))
+  #}
   # Retrieve the arguments provided to the function
   # Doing this while avoiding the arguments being evaluated is weird (see here https://stackoverflow.com/questions/70602963/ellipsis-as-function-in-substitute)
   inputArgs <- eval(substitute(alist(...)))
@@ -1407,19 +1407,39 @@ responseSummary <- function(..., summaryFunc) {
 #'  \item{\code{modelMatrix}}{A model matrix resulted from an expansion of the
 #'  covariates performed by \code{\link[stats]{model.matrix}}}
 #'  \item{\code{offetFrame}}{A data frame of offset terms used in the model}
-#'  \item{\code{nimbleCode}}{NIMBLE model specification code for the model
+#'  \item{\code{code}}{NIMBLE model specification code for the model
 #'  defined using the input parameters (see \code{\link[nimble]{nimbleCode}})}
+#'  \item{\code{constants}}{A list of constants to be passed to NIMBLE (see
+#'  \code{\link[nimble]{nimbleModel}})}
+#'  \item{\code{data}}{A list of data to be passed to NIMBLE (see
+#'  \code{\link[nimble]{nimbleModel}})}
+#'  \item{\code{inits}}{A list of starting values for model variables to be
+#'  passed to NIMBLE (see \code{\link[nimble]{nimbleModel}})}
+#'  \item{\code{dimensions}}{Named list of dimensions for variables to be
+#'  passed to NIMBLE (see \code{\link[nimble]{nimbleModel}})}
+#'  \item{\code{monitors}}{A character vector of names of variables to record
+#'  during MCMC sampling in NIMBLE (see \code{\link[nimble]{configureMCMC}})}
+#'  \item{\code{monitors2}}{A character vector of names of varaibles to record
+#'  during MCMC sampling in NIMBLE with a different thinning interval (see
+#'  \code{\link[nimble]{configureMCMC}})}
+#'  \item{\code{hierAttributes}}{A list containing attributes that are set
+#'  in each of the hierarchical component models}
+#'  \item{\code{link}}{A link list structure (as returned from
+#'  \code{\link{customLink}}) that defines the link function used in the model}
+#'  \item{\code{family}}{A error distribution list structure (as returned from
+#'  \code{\link{customError}}) that defines the error distribution used in the
+#'  model}
 #' }
 #'
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link[nimble]{nimbleCode}} \code{\link{customLink}}
 #'  \code{\link{customError}} \code{\link{errorFamilies}}
-#'  \code{\link{modelDefinitionToNIMBLE}} \code{\link[stats]{glm}}
-#'  \code{\link[INLA]{inla.stack.data}} \code{\link[stats]{model.matrix}}
-#'  \code{\link[nimble]{nimbleCode}}
+#'  \code{\link[stats]{glm}} \code{\link[INLA]{inla.stack.data}}
+#'  \code{\link[stats]{model.matrix}} \code{\link[nimble]{nimbleModel}}
+#'  \code{\link[nimble]{configureMCMC}}
 #'  @export
 modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE, suffix = "", sharedTermNode = NULL, ...) {
-  ### 1.12.1 ---- Sanity check the error distribution specification ----
+  ### 1.14.1 ---- Sanity check the error distribution specification ----
   inFamily <- family
   curLink <- linkFunctions_raw[["identity"]]
   if(!is.null(inFamily)) {
@@ -1468,7 +1488,7 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
         linkFunctions_raw[[tolower(curLinkName)]]
       })
     }
-    ### 1.12.2 ---- Sanity check the link function ----
+    ### 1.14.2 ---- Sanity check the link function ----
     curLink <- inFamily$link[[1]]
     if(!is.null(link)) {
       if(length(link) <= 0) {
@@ -1502,9 +1522,9 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
       }
     }
   }
-  ### 1.12.3 ---- Sanity check the model suffix ----
+  ### 1.14.3 ---- Sanity check the model suffix ----
   inSuffix <- processSuffix(suffix)
-  ### 1.12.4 ---- Sanity check the shared term node ----
+  ### 1.14.4 ---- Sanity check the shared term node ----
   inSharedTermNode <- NULL
   if(!is.null(sharedTermNode)) {
     inSharedTermNode <- tryCatch(as.character(sharedTermNode), error = function(err) {
@@ -1520,10 +1540,10 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
       inSharedTermNode <- NULL
     }
   }
-  ### 1.12.5 ---- Create the model matrix ----
+  ### 1.14.5 ---- Create the model matrix ----
   # Use the model inputs to create a model matrix
   modMatrix <- processModelFormula(inFormula = formula, inData = data, centreCovs = centreCovs, scaleCovs = scaleCovs)
-  ### 1.12.6 ---- Produce the BUGS formulation ----
+  ### 1.14.6 ---- Produce the BUGS formulation ----
   # Initialise the NIMBLE arguments
   nimbleArgs <- list(
     code = character(),
@@ -1619,7 +1639,7 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   # Include the hierarchical model terms if they are present
   hierAttributes <- NULL
   if(length(modMatrix$hFunctions) > 0) {
-    ### 1.12.7 ---- Add hierarchical model terms ----
+    ### 1.14.7 ---- Add hierarchical model terms ----
     hierList <- lapply(modMatrix$hFunctions, FUN = function(curFuncText, inSuffix) {
       callArguments <- parse(text = gsub("\\)$", paste0(", parentSuffix = \"", inSuffix, "\")"), gsub("^h\\(", "alist(", curFuncText, perl = TRUE), perl = TRUE))
       do.call(h, callArguments)
@@ -1677,14 +1697,14 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
     expNodeTextInput <- c(expNodeTextInput, paste0(hEffectNames, inSuffix, "[1:ndata", inSuffix, "]"))
   }
   if(length(modMatrix$smoothFunctions) > 0) {
-    ### 1.12.8 ---- Add mgcv smooth terms ----
+    ### 1.14.8 ---- Add mgcv smooth terms ----
     # Not yet supported
     stop("support for mgcv smooth functions in model formulae has not yet been implemented")
   }
   if(length(modMatrix$fFunctions) > 0) {
     stop("support for INLA functions is done through the 'nimbla' function")
   }
-  ### 1.12.9 ---- Add the code for the linear predictor ----
+  ### 1.14.9 ---- Add the code for the linear predictor ----
   finalResponseName <- ifelse(is.na(modMatrix$responseName), "response", modMatrix$responseName)
   # Add the code for the linear predictor
   nimbleArgs$code <- paste(c(
@@ -1699,7 +1719,7 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   nimbleArgs$constants <- c(nimbleArgs$constants, stats::setNames(list(ndataInput), paste0("ndata", inSuffix)))
   # Add a monitor for the prediction node
   nimbleArgs$monitor2 <- c(nimbleArgs$monitors2, paste0(finalResponseName, "Pred", inSuffix))
-  ### 1.12.10 --- Add the code for the error distribution ----
+  ### 1.14.10 --- Add the code for the error distribution ----
   if(!is.null(inFamily)) {
     # Add the code for the error distribution
     nimbleArgs$code <- paste(c(
@@ -1712,13 +1732,116 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
       nimbleArgs$data <- c(nimbleArgs$data, stats::setNames(list(modMatrix$responseValues), paste0(finalResponseName, inSuffix)))
     }
   }
-  ### 1.12.11 ---- Return the model components ----
+  ### 1.14.11 ---- Encapsulate the NIMBLE code ----
+  if(length(nimbleArgs$code) > 0) {
+    nimbleArgs$code <- parse(text = paste(c("nimble::nimbleCode({\n", nimbleArgs$code, "\n})"), collapse = "\n"))
+  }
+  ### 1.14.12 ---- Return the model components ----
   # Return a list of all the model components needed to run the model in NIMBLE
-  list(
-    nimbleArgs = nimbleArgs,          # Arguments to pass to NIMBLE
+  c(modelMatrix, nimbleArgs, list(
     hierAttributes = hierAttributes,  # Extra attributes returned by the hierarchical model specifications
-    modelMatrix = modMatrix,          # The model matrix
     link = curLink,                   # The link function
     family = inFamily                 # The error family distribution
-  )
+  ))
+}
+
+### 1.15 ==== Merge User Input with Automatically-Generated Input ====
+#' @title Merge Automatically-Generated NIMBLE Arguments with User Inputs
+#'
+#' @description An internal function to take input entered by the user using
+#' the NIMBLE interface functions defined in PaGAn (such as
+#' \code{\link{glmmble}}) and merge it with the NIMBLE arguments that are
+#' automatically generated by the package
+#'
+#' @param autoArgs A list of model settings as produced by the output of the
+#' \code{\link{modelDefinitionToNIMBLE}} function
+#' @param ... User-supplied arguments to NIMBLE component functions
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link{modelDefinitionToNIMBLE}} \code{\link{glmmble}}
+#' @keywords internal
+mergeNIMBLEInputs <- function(autoArgs, ...) {
+  # Sanity check the inputs
+  modConf <- tryCatch(as.list(autoArgs), error = function(err) {
+    stop("error encountered processing the automatically-generated arguments: ", err)
+  })
+  # Function to concatenate nimbleCode language objects
+  concatCode <- function(autoCode, userCode) {
+    # Utility function to retrieve the text from a language object
+    retrieveCodeText <- function(code) {
+      inCode <- tryCatch(as.character(code), error = function(err) {
+        stop("unable to retrieve NIMBLE code text: ", err)
+      })
+      if(is.null(inCode) || length(inCode) <= 0) {
+        inCode <- character()
+      } else if(is.language(code) && inCode[1] == "{") {
+        # Remove the first brackets if the input is a language object
+        inCode <- inCode[2:length(inCode)]
+      }
+      paste(inCode, collapse = "\n")
+    }
+    parse(text = paste(c(
+      "nimble::nimbleCode({\n",
+      "# --- User-supplied code ---",
+      retrieveCodeText(userCode),
+      "# --- Code generated by PaGAn package ---",
+      retrieveCodeText(autoCode),
+      "\n})"), collapse = "\n"))
+  }
+  # Function to merge list elements between user-supplied and the automatically created options
+  mergeListOption <- function(autoList, userList) {
+    inUserList <- tryCatch(as.list(userList), error = function(err) {
+      stop("unable to retrieve user arguments for NIMBLE: ", err)
+    })
+    if(length(inUserList) > 0 && is.null(names(inUserList))) {
+      stop("unable to retrieve user arguments for NIMBLE: input list does not have a 'names' attribute")
+    }
+    outList <- tryCatch(as.list(autoList), error = function(err) {
+      # This line should never get run
+      stop("unable to retrieve automatically-generated arguments for NIMBLE: ", err)
+    })
+    if(length(outList) > 0 && is.null(names(outList))) {
+      stop("unable to retrieve automatically-generated arguments for NIMBLE: input list does not have a 'names' attribute")
+    }
+    if(length(outList) <= 0) {
+      # Automatically generated list is empty so just copy the contents from the input list
+      outList <- inUserList
+    } else if(length(inUserList) > 0) {
+      isInUserList <- names(inUserList) %in% names(outList)
+      # Override elements in the automatically generated list that exist in the user-supplied list
+      if(any(isInUserList)) {
+        outList[names(inUserList)[isInUserList]] <- inUserList[isInUserList]
+      }
+      # Append any element in the user-supplied list that don't appear in the automatically generated list
+      outList <- append(outList, inUserList[!isInUserList])
+    }
+  }
+  # Retrieve ellipsis arguments
+  ellipsisArgs <- substitute(alist(...))
+  # NIMBLE arguments can have the 'nimble.' prefix to ensure that they are not donfused with arguments
+  # for higher-level functions with the same arguments
+  names(ellipsisArgs) <- gsub("^nimble\\.", "", names(ellipsisArgs), perl = TRUE)
+  # Attach any extra code provided by the user to the front of the model definition
+  ellipsisArgs$code <- concatCode(modConf$code, ellipsisArgs$code)
+  # Include any user-provided model constants
+  ellipsisArgs$constants <- mergeList(modConf$constants, ellipsisArgs$constants)
+  # Include any user-provided model data
+  ellipsisArgs$data <- mergeList(modConf$data, ellipsisArgs$data)
+  # Include any user-provided initialisation values
+  ellipsisArgs$inits <- mergeList(modConf$inits, ellipsisArgs$inits)
+  # Include any user-provided dimension values
+  ellipsisArgs$dimensions <- mergeList(modConf$dimensions, ellipsisArgs$dimensions)
+  # Include any user-provided monitors
+  if(is.null(ellipsisArgs$monitors)) {
+    ellipsisArgs$monitors <- modConf$monitors
+  } else {
+    ellipsisArgs$monitors <- unique(c(ellipsisArgs$monitors, modConf$monitors))
+  }
+  if(is.null(ellipsisArgs$monitors2)) {
+    ellipsisArgs$monitors2 <- modConf$monitors2
+  } else {
+    ellipsisArgs$monitors2 <- unique(c(ellipsisArgs$monitors2, modConf$monitors))
+  }
+  # Return the ellipsis arguments after they have been merged
+  ellipsisArgs
 }

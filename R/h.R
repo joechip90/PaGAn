@@ -5,7 +5,7 @@
 #' a variable in the \code{\link{h}} function) and creates a transformation
 #' matrix that links a vector of random effects to the data
 #'
-#' @param var The variable around which the hieracrchical effect will be defined
+#' @param var The variable around which the hierarchical effect will be defined
 #' @param centreCovs A logical scalar denoting whether the fixed effects in the
 #' model should be centred before the analysis: each covariate element is
 #' subtracted by its mean. \code{centreCovs} can also be a function with one

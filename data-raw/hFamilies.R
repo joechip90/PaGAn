@@ -6,7 +6,7 @@ if(file.exists(outputFile)) {
   load(outputFile, envir = outputEnv, verbose = TRUE)
 }
 
-### ==== 1.1 Create an Argument List of
+### ==== 1.1 Create an Argument List of Natively-supported Hierarchcial Models ====
 outputEnv$hFamilies_raw <- alist(
   iid = h.iid,
   lasso = h.lasso
