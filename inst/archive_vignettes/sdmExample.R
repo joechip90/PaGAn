@@ -1,3 +1,5 @@
+# devtools::install_github("joechip90/PaGAn")
+
 library(nimble)
 library(INLA)
 library(sf)
