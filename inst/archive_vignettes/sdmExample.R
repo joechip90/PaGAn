@@ -1,3 +1,5 @@
+# ==== 0. Initial global variables ====
+
 # devtools::install_github("joechip90/PaGAn")
 
 library(nimble)
@@ -11,19 +13,27 @@ library(PaGAn)
 # environment script. You can use usethis::edit_r_environ() to edit the R
 # environment and add GBIF credentials.  Your credentials need to be stored in
 # the following variables: "GBIFUser", "GBIFPass", "GBIFEmail" accordingly.
+# To make these variables you have to add the following text to the file that
+# gets opened up:
+# GBIFUser="xxx"
+# GBIFPass="xxx"
+# GBIFEmail="xxx"
+# Replacing the xxx with your GBIF username, password, or email.  The changes to
+# your R environment will only happen after you restart R
 
 # Set variables of interest
 speciesName <- "Aeshna grandis" # Blågrønnlibelle Øyenstikke
 longLimits <- c(3.708762, 32.778653)
 latLimits <- c(57.767492, 71.752397)
 GBIFcrsString <- "+proj=longlat +ellps=WGS84 +no_defs"
+spdealpha <- 1.5
 
 # Create a temporary working location
 workLoc <- tempdir()
 # Specify the location of the WorldClim environmental covariate data
 worldClimDataLoc <- "https://biogeo.ucdavis.edu/data/worldclim/v2.1/base/wc2.1_10m_bio.zip"
 
-# Download the WORLDCLIM data
+# ==== 1. Download the covariate data ====
 options(timeout = max(300, getOption("timeout")))
 tempWorldClimLoc <- file.path(workLoc, "worldClim.zip")
 if(file.exists(tempWorldClimLoc)) {
@@ -44,6 +54,7 @@ tempGIFLoc <- file.path(tempWorldClimDir, dir(tempWorldClimDir)[grepl("_1\\.tif$
 precGIFLoc <- file.path(tempWorldClimDir, dir(tempWorldClimDir)[grepl("_12\\.tif$", dir(tempWorldClimDir), perl = TRUE)])
 envCovars <- rast(list(temp = rast(tempGIFLoc), prec = rast(precGIFLoc)))
 
+# ==== 2. Download the occurrence data ====
 # Retrieve the species IDs of the species you are interested in
 matchingTaxa <- name_lookup(speciesName, rank = "species")
 speciesIDs <- unique(matchingTaxa$data$speciesKey)
@@ -85,3 +96,25 @@ occDataRaw <- st_as_sf(occ_download_import(occDataGet, downloadID, path = occDat
 envCovars <- crop(envCovars, ext(occDataRaw))
 # Ensure that the occurrence coordinates are on the same coordinate system as the covariates
 occDataRaw <- st_transform(occDataRaw, st_crs(envCovars))
+
+# 3. ==== Make the spatial mesh ====
+# Retrieve the coordinates of non nodata cells in the covariates
+cellPoints <- st_as_sf(cbind(crds(envCovars, df = TRUE, na.rm = FALSE), values(envCovars, dataframe = TRUE)), coords = c("x", "y"), crs = st_crs(envCovars))
+cellPoints <- cellPoints[!is.na(cellPoints$temp) & !is.na(cellPoints$prec), ]
+# Make a hull around the relevant points
+domainHull <- fmesher::fm_nonconvex_hull_inla(cellPoints)
+# Covert into a mesh
+effMesh <- fmesher::fm_mesh_2d_inla(
+  loc = st_as_sfc(occDataRaw),            # A set of coordinates to add to the mesh creation
+  cutoff = 0.3,                           # Minimum distance between mesh vertices
+  max.edge = c(1, 2) * 2,                 # Maximum distance between mesh vertices (first element in the main region and second in the border)
+  loc.domain = st_as_sfc(cellPoints),     # A boundary for the mesh (hull around the extent of the covariates)
+  crs = st_crs(envCovars)                 # Coordinate reference system to use
+)
+plot(effMesh)
+effMesh$n
+# Make the projection matrix associated with the mesh
+effectsProjMat <- inla.spde.make.A(effMesh, loc = st_coordinates(cellPoints))
+# Build the SPDE model
+spdeModel <- inla.spde2.matern(mesh = effMesh, alpha = spdealpha)
+
