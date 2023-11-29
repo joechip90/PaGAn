@@ -22,7 +22,8 @@ Imports:
     nimble,
     parallelly,
     coda,
-    inlabru
+    rlang,
+    INLA
 Suggests:
     testthat (>= 3.0.0),
     knitr,

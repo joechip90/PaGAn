@@ -31,6 +31,7 @@ A list object containing the following elements:
 \item{\code{responseName}}{The name of the response variable}
 \item{\code{hFunctions}}{Calls to special 'h' functions}
 \item{\code{fFunctions}}{Calls to special 'f' functions}
+\item{\code{sFunctions}}{Calls to special 's' functions}
 \item{\code{covNames}}{The names of the covariates used in the model
 specification and equivalent valid names to use in the NIMBLE model}
 \item{\code{covFrame}}{A data frame of the processed covariates}

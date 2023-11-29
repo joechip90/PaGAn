@@ -19,7 +19,7 @@
 #'
 #' @return A matrix object containing the transformation matrix
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
-#' @seealso \code{\linK{h}}
+#' @seealso \code{\link{h}}
 #' @export
 createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
   # Retrieve the name of the variable
@@ -31,7 +31,7 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
     }
     # Set some default column names if the matrix does not have any
     if(is.null(colnames(inVar))) {
-      colnames(inVar) <- paste0("level", 1:ncols(inVar))
+      colnames(inVar) <- paste0("level", 1:ncol(inVar))
     }
     # The input variable is a matrix or data.frame so include it as-is but
     # provide centreing or scaling if neccessary (this is probably rarely used
@@ -49,11 +49,11 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
         stop("invalid entry for the hierarchical effect variable: ", err)
       })
     }
-    if(length(inVal) <= 0) {
+    if(length(inVar) <= 0) {
       stop("invalid entry for the hierarchical effect variable: effect vector has zero length")
     }
     # Retrieve the levels associated with the input
-    inLevels <- makeBUGSFreindlyNames(levels(inVar), "warning", TRUE)
+    inLevels <- makeBUGSFriendlyNames(levels(inVar), "warning", TRUE)
     # Convert the level-based specification to a matrix-based specification
     inVar <- t(sapply(X = inVar, FUN = function(inIndex, numLevels) {
       outVec <- rep(0, numLevels)

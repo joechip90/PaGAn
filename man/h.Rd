@@ -4,11 +4,26 @@
 \alias{h}
 \title{Define a Hierarchical Component in a Linear Model}
 \usage{
-h(...)
+h(..., model, parentSuffix = "")
 }
 \arguments{
 \item{...}{Named arguments to be passed to the hierarchical model
 specification}
+
+\item{model}{Either a character scalar giving the name of the
+natively-supported hierarchical model to apply or a function implementing the
+hierarchical model}
+
+\item{parentSuffix}{A character scalar giving an additional suffix applied to
+all elements created in the hierarchical model specification. This argument
+is rarely set directly by the user but by the model definition functions
+(such as \code{\link{modelDefinitionToNIMBLE}}) when generating model code}
+}
+\value{
+A list element with the following named elements:
+\describe{
+\item{\code{code}}{}
+}
 }
 \description{
 Function to specify a hierarchical component with a Bayesian

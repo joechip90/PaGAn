@@ -49,18 +49,15 @@
 #' with '\code{nimble.}' to ensure they are passed to NIMBLE's constituent
 #' functions.
 #'
-#' @return A list with the following named elements:
-#' \describe{
-#'  \item{\code{modelConfig}}{A list of model configuration options as returned
-#'  by the \code{\link{modelDefinitionToNIMBLE}} function.}
-#'  \item{\code{mcmcOutput}}{The outputs of the MCMC as returned by the
-#'  \code{\link[nimble]{runMCMC}} function.}
-#' }
+#' @return A list that is the concatenation of the list outputs from the
+#' \code{\link{modelDefinitionToNIMBLE}} function and the
+#' \code{\link{mcmcNIMBLERun}} functions
+#'
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{runMCMC}},
 #' \code{\link[nimble]{nimbleModel}}, \code{\link[nimble]{compileNimble}},
 #' \code{\link[nimble]{buildMCMC}}, \code{\link[nimble]{nimbleCode}},
-#' \code{\link{modelDefinitionToNIMBLE}}
+#' \code{\link{modelDefinitionToNIMBLE}}, \code{\link{mcmcNIMBLERun}}
 #' @export
 glmmble <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE, suffix = "", mcCores = 1, ...) {
   ### 1.1.1 ---- Process the model formula to create a NIMBLE specification ----
@@ -69,8 +66,5 @@ glmmble <- function(formula, data, family = "gaussian", link = "identity", centr
   allParameters <- append(mergeNIMBLEInputs(modConf, ...), list(mcCores = mcCores))
   ### 1.1.3 ---- Run the model with the given arguments ----
   modelOutputs <- do.call(mcmcNIMBLERun, allParameters)
-  list(
-    modelConfig = modConf,
-    mcmcOutput = modelOutputs
-  )
+  append(modConf, modelOutputs)
 }

@@ -161,8 +161,8 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
       }
     }
   }
-  # Remove any "..." parameters if they still exist in the output
-  stats::setNames(lapply(X = nimbleArgs, FUN = function(curFunc) { curFunc[names(curFunc) != "..."] }), names(nimbleArgs))
+  # Remove any "..." or missing parameters if they still exist in the output
+  stats::setNames(lapply(X = nimbleArgs, FUN = function(curFunc) { curFunc[names(curFunc) != "..." & sapply(X = curFunc, FUN = function(curArg) { !rlang::is_missing(curArg) })] }), names(nimbleArgs))
 }
 
 ### 1.3 ==== Run NIMBLE using specified arguments ====
@@ -187,11 +187,11 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #'
 #' @return A list containing the following named elements:
 #' \describe{
-#'  \item{\code{model}}{An uncompiled model object as returned by the function
+#'  \item{\code{modelObject}}{An uncompiled model object as returned by the function
 #'  \code{\link[nimble]{nimbleModel}} using the parameters supplied}
-#'  \item{\code{mcmc}}{An uncompiled MCMC object as returned by the function
+#'  \item{\code{mcmcObject}}{An uncompiled MCMC object as returned by the function
 #'  \code{\link[nimble]{buildMCMC}} using the parameters supplied}
-#'  \item{\code{mcmcOutput}}{The output of the completed MCMC as returned by the
+#'  \item{\code{...}}{The output of the completed MCMC as returned by the
 #'  function \code{\link[nimble]{runMCMC}} using the parameters supplied}
 #' }
 #' @examples
@@ -243,8 +243,13 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 mcmcNIMBLERun <- function(..., mcCores = 1) {
   ### 1.3.1 ---- Define single-run function ----
   doNIMBLERun <- function(nimbleArgs, overrideWAIC = FALSE) {
+    tempCode <- substitute(nimble::nimbleCode(inCode), list(inCode = nimbleArgs$nimbleModel$code))
     # Create the model object
-    nimbleArgs$configureMCMC$conf <- do.call(nimble::nimbleModel, nimbleArgs$nimbleModel)
+    tempModel <- do.call(nimble::nimbleModel, append(
+      list(code = tempCode),
+      nimbleArgs$nimbleModel[names(nimbleArgs$nimbleModel) != "code"]
+    ))
+    nimbleArgs$configureMCMC$conf <- tempModel
     # Override the WAIC if needed (used in parallelized runs of NIMBLE)
     if(overrideWAIC) {
       extraVarsMonitor <- nimbleArgs$configureMCMC$conf$getParents(nimbleArgs$configureMCMC$conf$getNodeNames(dataOnly = TRUE), stochOnly = TRUE)
@@ -253,20 +258,24 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
         extraVarsMonitor
       })
     }
+    tempMCMC <- do.call(nimble::buildMCMC, nimbleArgs$configureMCMC)
     # Compile the model and MCMC
     nimbleArgs$compileNimble <- c(list(
       modelPaGAn = nimbleArgs$configureMCMC$conf,
       # Configure the MCMC
-      mcmcPaGAn = do.call(nimble::buildMCMC, nimbleArgs$configureMCMC)
+      mcmcPaGAn = tempMCMC
     ), nimbleArgs$compileNimble)
     # Compile the MCMC object
     compiledList <- do.call(nimble::compileNimble, nimbleArgs$compileNimble)
     nimbleArgs$runMCMC$mcmc <- compiledList[["mcmcPaGAn"]]
-    # Run the MCMC and return the output
-    list(
-      model = nimbleArgs$configureMCMC$conf,
-      mcmc = nimbleArgs$compileNimble$mcmcPaGAn,
-      mcmcOutput = do.call(nimble::runMCMC, nimbleArgs$runMCMC)
+    # Run the MCMC
+    mcmcOutput <- do.call(nimble::runMCMC, nimbleArgs$runMCMC)
+    # Return the output as a concatenation of the list
+    append(
+      list(
+        modelObject = nimbleArgs$configureMCMC$conf,
+        mcmcObject = nimbleArgs$compileNimble$mcmcPaGAn
+      ), mcmcOutput
     )
   }
   ### 1.3.2 ---- Sanity check the parameters ----
@@ -292,7 +301,8 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     inNumCores <- parallelly::availableCores()
   }
   # Process the nimble arguments
-  nimbleArgs <- do.call(nimbleParameters, append(substitute(alist(...)), list(warnNotFound = TRUE)))
+  nimbleArgs <- do.call(nimbleParameters, eval(substitute(alist(..., warnNotFound = TRUE))))
+  # nimbleArgs <- do.call(nimbleParameters, append(eval(substitute(list(...))), list(warnNotFound = TRUE)))
   # Retrieve the number of chains to be run
   numChains <- 1
   if(!is.null(nimbleArgs$runMCMC$nchains)) {
@@ -316,6 +326,18 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
   }
   nimbleArgs$runMCMC$nchains <- numChains
   outValue <- NULL
+  # See if user request WAIC calculation
+  if(is.language(nimbleArgs$configureMCMC$enableWAIC)) {
+    nimbleArgs$configureMCMC$enableWAIC <- eval(nimbleArgs$configureMCMC$enableWAIC)
+  }
+  useWAIC <- tryCatch(as.logical(nimbleArgs$configureMCMC$enableWAIC) || as.logical(nimbleArgs$runMCMC$WAIC), error = function(err) {
+    warning("error encountered with WAIC settings configuration so default settings used instead: ", err)
+    nimble::getNimbleOption("MCMCenableWAIC")
+  })
+  if(useWAIC) {
+    nimbleArgs$configureMCMC$enableWAIC <- TRUE
+    nimbleArgs$runMCMC$WAIC <- TRUE
+  }
   if(inNumCores == 1 || numChains == 1) {
     ### 1.3.3 ---- Run the single-core version of the function ----
     # If there is either one core or one chain then there is no benefit to distributing the
@@ -335,10 +357,6 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     logFiles <- replicate(inNumCores, tempfile())
     # Check to see if WAIC information is requested. If so, inform the user that
     # only offline methods can be used
-    useWAIC <- tryCatch(as.logical(nimbleArgs$configureMCMC$enableWAIC) || as.logical(nimbleArgs$runMCMC$WAIC), error = function(err) {
-      warning("error encountered with WAIC settings configuration so default settings used instead: ", err)
-      nimble::getNimbleOption("MCMCenableWAIC")
-    })
     WAICburnIn <- tryCatch(as.integer(nimbleArgs$configureMCMC$controlWAIC$nburnin_extra), error = function(err) {
       warning("error encountered with WAIC settings configuration so default settings used instead: ", err)
       formals(nimble::calculateWAIC)$nburnin
@@ -743,7 +761,7 @@ centreScaleCovariates <- function(inData, centreCovs = TRUE, scaleCovs = TRUE) {
   doCentreScale <- function(curCov, inFunc) {
     # Test to see if the input function can take na.rm as an argument
     hasnarm <- any(c("...", "na.rm") %in% names(formals(inCentre)))
-    outValue <- numeric(NA)
+    outValue <- as.numeric(c(NA))
     if(!is.factor(curCov) && !is.character(curCov) && !is.logical(curCov)) {
       # If the covariate is not a factor/logical than calculate the centre/scale if there
       # unique values in the covariate that are not 0 and 1
@@ -1013,12 +1031,19 @@ processEllipsisArgs <- function(argsToRetrieve, ...) {
     )
   }
   # Collect the ... parameters
-  ellipsisParameters <- substitute(alist(...))
-  if(!is.null(names(outArgs)) && !is.null(names(ellipsisParameters))) {
-    paramsInEllipsis <- names(outArgs) %in% names(ellipsisParameters)
+  ellipsisParameters <- eval(substitute(alist(...)))
+  if(!is.null(names(ellipsisParameters))) {
+    # Find those parameters in the ... that appear in the output argument list
+    paramsInEllipsis <- names(ellipsisParameters) %in% names(outArgs)
     if(any(paramsInEllipsis)) {
-      # Copy those parameters across that occur in the ellipsis parameters
-      outArgs[names(outArgs)[paramsInEllipsis]] <- ellipsisParameters[names(outArgs)[paramsInEllipsis]]
+      outArgs[names(ellipsisParameters)[paramsInEllipsis]] <- ellipsisParameters[paramsInEllipsis]
+    }
+    if("..." %in% names(outArgs)) {
+      # If the output arguments includes a ... terms then copy over all other inputs
+      outArgs <- outArgs[names(outArgs) != "..."]
+      if(any(!paramsInEllipsis)) {
+        outArgs <- c(outArgs, ellipsisParameters[!paramsInEllipsis])
+      }
     }
   }
   outArgs
@@ -1330,12 +1355,14 @@ customError <- function(nimbleLikeli, simulate, nimblePrior = list(), nimbleCons
 #'
 #' @return A numeric scalar with the summary statistic of the response variable
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
-#' @keywords internal
+#' @export
 responseSummary <- function(..., summaryFunc) {
   outVal <- NA
-  inArgs <- substitute(alist(...))
   # Retrieve the arguments passed to the function that are relevant to the model processing arguments
   modelProcessArguments <- processEllipsisArgs(processModelFormula, ...)
+  # For some reason the arguments to the 'processModelFormula' function are 'inFormula' and 'inData' rather than
+  # 'formula' and 'data' so we retrieve any arguments by that name too
+  modelProcessArguments[c("inFormula", "inData")] <- processEllipsisArgs(c("formula", "data"), ...)
   # Process the model formula to retrieve the response variable
   responseValues <- tryCatch(do.call(processModelFormula, modelProcessArguments)$responseValues, error = function(err) {
     stop("error encountered during retrieval of response variable: ", err)
@@ -1437,7 +1464,7 @@ responseSummary <- function(..., summaryFunc) {
 #'  \code{\link[stats]{glm}} \code{\link[INLA]{inla.stack.data}}
 #'  \code{\link[stats]{model.matrix}} \code{\link[nimble]{nimbleModel}}
 #'  \code{\link[nimble]{configureMCMC}}
-#'  @export
+#' @export
 modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE, suffix = "", sharedTermNode = NULL, ...) {
   ### 1.14.1 ---- Sanity check the error distribution specification ----
   inFamily <- family
@@ -1557,13 +1584,14 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   expNodeTextInput <- c()
   priorText <- c()
   # Make a list of all the parameters that have been entered
-  allParams <- c(alist(formula = formula, data = data, family = family, link = link, centreCovs = centreCovs, scaleCovs = scaleCovs, suffix = suffix), substitute(alist(...)))
+  allParams <- eval(substitute(list(formula = formula, data = data, family = family, link = link, centreCovs = centreCovs, scaleCovs = scaleCovs, suffix = suffix, ...)))
   if(!is.null(inFamily)) {
     # If the error distribution requires extra constants to be defined then do that
     if(length(inFamily$nimbleConstants) > 0) {
       nimbleArgs$constants <- stats::setNames(lapply(X = inFamily$nimbleConstants, FUN = function(curConstantFunc, inParams) {
         # Retrieve the parameters that the constant function requires
-        curParams <- do.call(processEllipsisArgs, c(alist(argsToRetrieve = curConstantFunc), inParams))
+        testParams <- append(list(argsToRetrieve = curConstantFunc), inParams)
+        curParams <- do.call(processEllipsisArgs, testParams)
         # Call the constant specification function with the relevant parameters
         tryCatch(as.numeric(do.call(curConstantFunc, curParams)), error = function(err) {
           stop("error encountered processing constants related to the error distribution: ", err)
@@ -1575,7 +1603,8 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
       # Set the prior text in the code
       priorText <- stats::setNames(sapply(X = inFamily$nimblePrior, FUN = function(curPriorSpec, inParams) {
         # Retrieve the parameters that the prior function requires
-        curParams <- do.call(processEllipsisArgs, c(alist(argsToRetrieve = curPriorSpec), inParams))
+        testParams <- append(list(argsToRetrieve = curPriorSpec), inParams)
+        curParams <- do.call(processEllipsisArgs, testParams)
         # Call the prior specification function
         tryCatch(as.character(do.call(curPriorSpec, curParams)), error = function(err) {
           stop("error encountered processing prior specifications related to the error distribution: ", err)
@@ -1585,7 +1614,8 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
       nimbleArgs$monitors <- paste0(names(inFamily$nimblePrior), inSuffix)
       nimbleArgs$inits <- stats::setNames(lapply(X = inFamily$nimbleInits, FUN = function(curInitFunc, inParams) {
         # Retrieve the parameters that the initialisation function requires
-        curParams <- do.call(processEllipsisArgs, c(alist(argsToRetrieve = curInitSpec), inParams))
+        testParams <- append(list(argsToRetrieve = curInitFunc), inParams)
+        curParams <- do.call(processEllipsisArgs, testParams)
         # Call the initialisation function with the relevant parameters
         tryCatch(do.call(curInitFunc, curParams), error = function(err) {
           stop("error encountered processing initialisation of parameters related to the error distribution: ", err)
@@ -1628,7 +1658,7 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
     nimbleArgs$constants <- append(nimbleArgs$constants, stats::setNames(as.list(modMatrix$covFrame), paste0(modMatrix$covNames["nimbleName", colnames(modMatrix$covFrame)], inSuffix)))
     priorText <- c(priorText, stats::setNames(
       paste0(modMatrix$covNames["coefficientName", ], inSuffix, " ~ ", sapply(X = modMatrix$covNames["frameName", ], FUN = fixedWidePrior, ...))
-    ), paste0(modMatrix$covNames["coefficientName", ], inSuffix))
+    , paste0(modMatrix$covNames["coefficientName", ], inSuffix)))
   }
   # Add the offset terms if they are present
   if(!is.null(modMatrix$offsetFrame)) {
@@ -1718,9 +1748,31 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   ndataInput <- nrow(modMatrix$modelMatrix)
   nimbleArgs$constants <- c(nimbleArgs$constants, stats::setNames(list(ndataInput), paste0("ndata", inSuffix)))
   # Add a monitor for the prediction node
-  nimbleArgs$monitor2 <- c(nimbleArgs$monitors2, paste0(finalResponseName, "Pred", inSuffix))
+  nimbleArgs$monitors2 <- c(nimbleArgs$monitors2, paste0(finalResponseName, "Pred", inSuffix))
   ### 1.14.10 --- Add the code for the error distribution ----
   if(!is.null(inFamily)) {
+    # Create more sensible initial values for the fixed effects
+    linValues <- modMatrix$responseValues
+    if(!is.null(nimbleArgs$constants$ntrials)) {
+      # Convert data to proportions in situations where there is a number of trials
+      linValues <- linValues / nimbleArgs$constants$ntrials
+    }
+    linValues <- curLink$invfunc(linValues)
+    optimCovFrame <- modMatrix$covFrame
+    names(optimCovFrame) <- paste0(modMatrix$covNames["coefficientName", ], inSuffix)
+    if(attr(modMatrix$terms, "intercept") >= 1) {
+      optimCovFrame <- cbind(optimCovFrame, data.frame(intercept = rep(1, nrow(optimCovFrame))))
+      names(optimCovFrame)[ncol(optimCovFrame)] <- paste0("intercept", inSuffix)
+    }
+    # Initialise a vector of values (using least squares minimisation)
+    testVec <- stats::setNames(rep(0.0, ncol(optimCovFrame)), names(optimCovFrame))
+    testVec[length(testVec)] <- ifelse(is.null(nimbleArgs$inits[[paste0("intercept", inSuffix)]]), 0.0, nimbleArgs$inits[[paste0("intercept", inSuffix)]])
+    sqCalc <- function(x, optimCovFrame, linValues) {
+      sqDiff <- (as.matrix(optimCovFrame) %*% x - linValues)^2
+      sum(sqDiff, na.rm = TRUE)
+    }
+    initVec <- as.list(stats::optim(testVec, sqCalc, optimCovFrame = optimCovFrame, linValues = linValues)$par)
+    nimbleArgs$inits[names(initVec)] <- initVec
     # Add the code for the error distribution
     nimbleArgs$code <- paste(c(
       nimbleArgs$code,
@@ -1734,11 +1786,11 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   }
   ### 1.14.11 ---- Encapsulate the NIMBLE code ----
   if(length(nimbleArgs$code) > 0) {
-    nimbleArgs$code <- parse(text = paste(c("nimble::nimbleCode({\n", nimbleArgs$code, "\n})"), collapse = "\n"))
+    nimbleArgs$code <- eval(parse(text = paste(c("nimble::nimbleCode({\n", nimbleArgs$code, "\n})"), collapse = "\n")))
   }
   ### 1.14.12 ---- Return the model components ----
   # Return a list of all the model components needed to run the model in NIMBLE
-  c(modelMatrix, nimbleArgs, list(
+  c(modMatrix, nimbleArgs, list(
     hierAttributes = hierAttributes,  # Extra attributes returned by the hierarchical model specifications
     link = curLink,                   # The link function
     family = inFamily                 # The error family distribution
@@ -1780,13 +1832,13 @@ mergeNIMBLEInputs <- function(autoArgs, ...) {
       }
       paste(inCode, collapse = "\n")
     }
-    parse(text = paste(c(
+    eval(parse(text = paste(c(
       "nimble::nimbleCode({\n",
       "# --- User-supplied code ---",
       retrieveCodeText(userCode),
       "# --- Code generated by PaGAn package ---",
       retrieveCodeText(autoCode),
-      "\n})"), collapse = "\n"))
+      "\n})"), collapse = "\n")))
   }
   # Function to merge list elements between user-supplied and the automatically created options
   mergeListOption <- function(autoList, userList) {
@@ -1815,22 +1867,23 @@ mergeNIMBLEInputs <- function(autoArgs, ...) {
       # Append any element in the user-supplied list that don't appear in the automatically generated list
       outList <- append(outList, inUserList[!isInUserList])
     }
+    outList
   }
   # Retrieve ellipsis arguments
-  ellipsisArgs <- substitute(alist(...))
+  ellipsisArgs <- eval(substitute(list(...)))
   # NIMBLE arguments can have the 'nimble.' prefix to ensure that they are not donfused with arguments
   # for higher-level functions with the same arguments
   names(ellipsisArgs) <- gsub("^nimble\\.", "", names(ellipsisArgs), perl = TRUE)
   # Attach any extra code provided by the user to the front of the model definition
   ellipsisArgs$code <- concatCode(modConf$code, ellipsisArgs$code)
   # Include any user-provided model constants
-  ellipsisArgs$constants <- mergeList(modConf$constants, ellipsisArgs$constants)
+  ellipsisArgs$constants <- mergeListOption(modConf$constants, ellipsisArgs$constants)
   # Include any user-provided model data
-  ellipsisArgs$data <- mergeList(modConf$data, ellipsisArgs$data)
+  ellipsisArgs$data <- mergeListOption(modConf$data, ellipsisArgs$data)
   # Include any user-provided initialisation values
-  ellipsisArgs$inits <- mergeList(modConf$inits, ellipsisArgs$inits)
+  ellipsisArgs$inits <- mergeListOption(modConf$inits, ellipsisArgs$inits)
   # Include any user-provided dimension values
-  ellipsisArgs$dimensions <- mergeList(modConf$dimensions, ellipsisArgs$dimensions)
+  ellipsisArgs$dimensions <- mergeListOption(modConf$dimensions, ellipsisArgs$dimensions)
   # Include any user-provided monitors
   if(is.null(ellipsisArgs$monitors)) {
     ellipsisArgs$monitors <- modConf$monitors

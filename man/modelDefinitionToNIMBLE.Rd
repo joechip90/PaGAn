@@ -11,7 +11,9 @@ modelDefinitionToNIMBLE(
   link = "identity",
   centreCovs = TRUE,
   scaleCovs = TRUE,
-  suffix = ""
+  suffix = "",
+  sharedTermNode = NULL,
+  ...
 )
 }
 \arguments{
@@ -53,6 +55,14 @@ instead scaled around the output of this function.}
 
 \item{suffix}{A character scalar that will be appended to all variables used
 in the NIMBLE code (including constants and data)}
+
+\item{sharedTermNode}{A character containing the name of a node containing
+the expectation that is shared across different likelihoods. Defaults to
+\code{NULL} and this default should be used in most cases where the
+model specification isn't being combined with a larger model component}
+
+\item{...}{Other parameters that are passed to the error distribution
+processing functions}
 }
 \value{
 A list object containing the following named elements:
@@ -61,14 +71,35 @@ A list object containing the following named elements:
 \item{\code{responseName}}{The name of the response variable}
 \item{\code{hFunctions}}{Calls to special 'h' functions}
 \item{\code{fFunctions}}{Calls to special 'f' functions}
+\item{\code{sFunctions}}{Calls to special 's' functions}
 \item{\code{covNames}}{The names of the covariates used in the model
 specification and equivalent valid names to use in the NIMBLE model}
 \item{\code{covFrame}}{A data frame of the processed covariates}
 \item{\code{modelMatrix}}{A model matrix resulted from an expansion of the
 covariates performed by \code{\link[stats]{model.matrix}}}
 \item{\code{offetFrame}}{A data frame of offset terms used in the model}
-\item{\code{nimbleCode}}{NIMBLE model specification code for the model
+\item{\code{code}}{NIMBLE model specification code for the model
 defined using the input parameters (see \code{\link[nimble]{nimbleCode}})}
+\item{\code{constants}}{A list of constants to be passed to NIMBLE (see
+\code{\link[nimble]{nimbleModel}})}
+\item{\code{data}}{A list of data to be passed to NIMBLE (see
+\code{\link[nimble]{nimbleModel}})}
+\item{\code{inits}}{A list of starting values for model variables to be
+passed to NIMBLE (see \code{\link[nimble]{nimbleModel}})}
+\item{\code{dimensions}}{Named list of dimensions for variables to be
+passed to NIMBLE (see \code{\link[nimble]{nimbleModel}})}
+\item{\code{monitors}}{A character vector of names of variables to record
+during MCMC sampling in NIMBLE (see \code{\link[nimble]{configureMCMC}})}
+\item{\code{monitors2}}{A character vector of names of varaibles to record
+during MCMC sampling in NIMBLE with a different thinning interval (see
+\code{\link[nimble]{configureMCMC}})}
+\item{\code{hierAttributes}}{A list containing attributes that are set
+in each of the hierarchical component models}
+\item{\code{link}}{A link list structure (as returned from
+\code{\link{customLink}}) that defines the link function used in the model}
+\item{\code{family}}{A error distribution list structure (as returned from
+\code{\link{customError}}) that defines the error distribution used in the
+model}
 }
 }
 \description{
@@ -79,10 +110,9 @@ standard model specification with a syntax similar to that used in the
 \seealso{
 \code{\link[nimble]{nimbleCode}} \code{\link{customLink}}
 \code{\link{customError}} \code{\link{errorFamilies}}
-\code{\link{modelDefinitionToNIMBLE}} \code{\link[stats]{glm}}
-\code{\link[INLA]{inla.stack.data}} \code{\link[stats]{model.matrix}}
-\code{\link[nimble]{nimbleCode}}
-@export
+\code{\link[stats]{glm}} \code{\link[INLA]{inla.stack.data}}
+\code{\link[stats]{model.matrix}} \code{\link[nimble]{nimbleModel}}
+\code{\link[nimble]{configureMCMC}}
 }
 \author{
 Joseph D. Chipperfield, \email{joechip90@googlemail.com}
