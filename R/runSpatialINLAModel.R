@@ -306,7 +306,6 @@ runINLASpatialGLM <- function(occurrenceData, climateData, specCol = NULL, alpha
       meanClimatePred = linPermPred$mean - spatRandPermPred,               # The mean climate component (linear predictor)
       meanSpatialPred = spatRandPermPred)                                  # The mean spatial component (linear predictor)
     ## 1.5.5 Create the prediction geographical objects ----
-    browser()
     predictRasterFrame <- data.frame(
       # Initialise a data frame of NA values
       meanEst = rep(NA, terra::ncell(inOccurrenceData)),
