@@ -24,11 +24,11 @@ the number available on the system}
 \value{
 A list containing the following named elements:
 \describe{
-\item{\code{model}}{An uncompiled model object as returned by the function
+\item{\code{modelObject}}{An uncompiled model object as returned by the function
 \code{\link[nimble]{nimbleModel}} using the parameters supplied}
-\item{\code{mcmc}}{An uncompiled MCMC object as returned by the function
+\item{\code{mcmcObject}}{An uncompiled MCMC object as returned by the function
 \code{\link[nimble]{buildMCMC}} using the parameters supplied}
-\item{\code{mcmcOutput}}{The output of the completed MCMC as returned by the
+\item{\code{...}}{The output of the completed MCMC as returned by the
 function \code{\link[nimble]{runMCMC}} using the parameters supplied}
 }
 }

@@ -23,7 +23,10 @@ Imports:
     parallelly,
     coda,
     rlang,
-    INLA
+    INLA,
+    sf,
+    fmesher,
+    terra
 Suggests:
     testthat (>= 3.0.0),
     knitr,

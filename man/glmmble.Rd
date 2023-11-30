@@ -70,13 +70,9 @@ with '\code{nimble.}' to ensure they are passed to NIMBLE's constituent
 functions.}
 }
 \value{
-A list with the following named elements:
-\describe{
-\item{\code{modelConfig}}{A list of model configuration options as returned
-by the \code{\link{modelDefinitionToNIMBLE}} function.}
-\item{\code{mcmcOutput}}{The outputs of the MCMC as returned by the
-\code{\link[nimble]{runMCMC}} function.}
-}
+A list that is the concatenation of the list outputs from the
+\code{\link{modelDefinitionToNIMBLE}} function and the
+\code{\link{mcmcNIMBLERun}} functions
 }
 \description{
 A function to fit generalized linear mixed-effect models
@@ -87,7 +83,7 @@ description of the error distribution
 \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{runMCMC}},
 \code{\link[nimble]{nimbleModel}}, \code{\link[nimble]{compileNimble}},
 \code{\link[nimble]{buildMCMC}}, \code{\link[nimble]{nimbleCode}},
-\code{\link{modelDefinitionToNIMBLE}}
+\code{\link{modelDefinitionToNIMBLE}}, \code{\link{mcmcNIMBLERun}}
 }
 \author{
 Joseph D. Chipperfield, \email{joechip90@googlemail.com}

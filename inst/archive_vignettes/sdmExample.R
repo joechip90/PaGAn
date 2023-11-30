@@ -113,8 +113,7 @@ effMesh <- fmesher::fm_mesh_2d_inla(
 )
 plot(effMesh)
 effMesh$n
-# Make the projection matrix associated with the mesh
-effectsProjMat <- inla.spde.make.A(effMesh, loc = st_coordinates(cellPoints))
-# Build the SPDE model
-spdeModel <- inla.spde2.matern(mesh = effMesh, alpha = spdealpha)
+
+# Run the model with the downloaded data
+modelOutputs <- runINLASpatialGLM(occDataRaw, envCovars)
 

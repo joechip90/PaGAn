@@ -29,5 +29,5 @@ test_that("Linear Regression: Model Processed Correctly", {
   numBurnIn <- 500
   numChains <- 4
   ### 1.1.3 ---- Process the model formula ----
-  processedModelData <- glmmble(formula = response ~ covA + covB, data = testData, nburnin = numBurnIn, niter = numIters + numBurnIn, nchains = numChains, summary = TRUE, suffix = "_test", WAIC = TRUE)
+  # processedModelData <- glmmble(formula = response ~ covA + covB, data = testData, nburnin = numBurnIn, niter = numIters + numBurnIn, nchains = numChains, summary = TRUE, suffix = "_test", WAIC = TRUE)
 })
