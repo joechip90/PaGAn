@@ -1,3 +1,28 @@
+#' @title Specify a LASSO Hierarchical Effect
+#'
+#' @description Function used to specify a LASSO hierachical effect
+#'
+#' @param var The variable around which the hierarchical effect will be defined
+#' @param centreCovs A logical scalar denoting whether the fixed effects in the
+#' model should be centred before the analysis: each covariate element is
+#' subtracted by its mean. \code{centreCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead centred around the output of this function.
+#' @param scaleCovs A logical scalar denoting whether the fixed effects in the
+#' model should be scaled before the analysis: each covariate element is divided
+#' by its standard deviation. \code{scaleCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead scaled around the output of this function.
+#' @param suffix A character scalar that will be appended to all variables used
+#' in the NIMBLE code (including constants and data)
+#' @param lassoRatePrior A character scalar containing the NIMBLE code (that
+#' will be processed in \code{\link[nimble]{nimbleCode}}) that defines the
+#' prior for the rate parameter of the Laplace distribution that determines
+#' the shrinkage
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}}, \code{\link{h}}
+#' @export
 h.lasso <- function(var, centreCovs = TRUE, scaleCovs = TRUE, suffix = "", lassoRatePrior = "dgamma(0.001, 0.001)") {
   # Initialise an output list containing the defined NIMBLE components in the
   # hierarchical specification

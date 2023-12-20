@@ -6,6 +6,7 @@ library(nimble)
 library(INLA)
 library(sf)
 library(terra)
+library(tidyterra)
 library(rgbif)
 library(PaGAn)
 
@@ -98,21 +99,27 @@ envCovars <- crop(envCovars, ext(occDataRaw))
 occDataRaw <- st_transform(occDataRaw, st_crs(envCovars))
 
 # 3. ==== Make the spatial mesh ====
+effMesh <- priorityMesh(envCovars, 100, loc = st_as_sfc(occDataRaw), cutoff = 0.3, max.edge = c(1, 2) * 2)
+autoplot(effMesh, show.initialLocs = FALSE)
 # Retrieve the coordinates of non nodata cells in the covariates
-cellPoints <- st_as_sf(cbind(crds(envCovars, df = TRUE, na.rm = FALSE), values(envCovars, dataframe = TRUE)), coords = c("x", "y"), crs = st_crs(envCovars))
-cellPoints <- cellPoints[!is.na(cellPoints$temp) & !is.na(cellPoints$prec), ]
-# Make a hull around the relevant points
-domainHull <- fmesher::fm_nonconvex_hull_inla(cellPoints)
-# Covert into a mesh
-effMesh <- fmesher::fm_mesh_2d_inla(
-  loc = st_as_sfc(occDataRaw),            # A set of coordinates to add to the mesh creation
-  cutoff = 0.3,                           # Minimum distance between mesh vertices
-  max.edge = c(1, 2) * 2,                 # Maximum distance between mesh vertices (first element in the main region and second in the border)
-  loc.domain = st_as_sfc(cellPoints),     # A boundary for the mesh (hull around the extent of the covariates)
-  crs = st_crs(envCovars)                 # Coordinate reference system to use
-)
-plot(effMesh)
-effMesh$n
+# cellPoints <- st_as_sf(cbind(crds(envCovars, df = TRUE, na.rm = FALSE), values(envCovars, dataframe = TRUE)), coords = c("x", "y"), crs = st_crs(envCovars))
+# cellPoints <- cellPoints[!is.na(cellPoints$temp) & !is.na(cellPoints$prec), ]
+# cellPoly <- sf::st_as_sf(terra::as.polygons(envCovars > -Inf))
+# # Make a hull around the relevant points
+# domainHull <- fmesher::fm_nonconvex_hull_inla(cellPoints)
+# # Covert into a mesh
+# effMesh <- fmesher::fm_mesh_2d_inla(
+# #  loc = st_as_sfc(occDataRaw),            # A set of coordinates to add to the mesh creation
+# #  cutoff = 0.3,                           # Minimum distance between mesh vertices
+#   max.edge = c(1, 2) * 2,                 # Maximum distance between mesh vertices (first element in the main region and second in the border)
+#   boundary = fmesher::fm_as_segm(cellPoly),
+# #  interior = fmesher::fm_as_segm(cellPoints),
+# #  loc.domain = st_as_sfc(cellPoints),     # A boundary for the mesh (hull around the extent of the covariates)
+#   crs = st_crs(envCovars),                 # Coordinate reference system to use
+#   plot.delay = TRUE
+# )
+# plot(effMesh)
+# effMesh$n
 
 # Run the model with the downloaded data
 modelOutputs <- runINLASpatialGLM(occDataRaw, envCovars)

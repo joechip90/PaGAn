@@ -66,5 +66,7 @@ glmmble <- function(formula, data, family = "gaussian", link = "identity", centr
   allParameters <- append(mergeNIMBLEInputs(modConf, ...), list(mcCores = mcCores))
   ### 1.1.3 ---- Run the model with the given arguments ----
   modelOutputs <- do.call(mcmcNIMBLERun, allParameters)
-  append(modConf, modelOutputs)
+  outModel <- append(modConf, modelOutputs)
+  class(outModel) <- c("glmmble_model")
+  outModel
 }

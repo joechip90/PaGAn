@@ -43,14 +43,12 @@
 #' \describe{
 #'  \item{modelSummaries}{A list of \code{\link[INLA]{inla}} model objects for
 #'  each species in the \code{occurrenceData} \code{data.frame}.}
-#'  \item{spatialMesh}{A \code{\link[sp::SpatialPolygons]{SpatialPolygons}}
+#'  \item{spatialMesh}{A \code{SpatialPolygons}
 #'  object containing the spatial mesh used in the
 #'  \code{\link[INLA]{inla}} function.}
 #' }
 #'
 #' @author Joseph D. Chipperfield, \email{joseph.chipperfield@@nmbu.no}
-#' @seealso \code{\link[sp::SpatialGridDataFrame]{SpatialGridDataFrame}} \code{\link[INLA::inla.mesh.2d]{inla.mesh.2d}}
-#' \code{\link[INLA::inla.nonconvex.hull]{inla.nonconvex.hull}}
 #' @export
 #'
 runINLASpatialGLM <- function(occurrenceData, climateData, specCol = NULL, alpha = 1.5, meshParameters = list(), meshBoundary = NULL, responseDensity = 100,
@@ -195,11 +193,11 @@ runINLASpatialGLM <- function(occurrenceData, climateData, specCol = NULL, alpha
   if(length(occGrid) == 1) {
     occGrid <- occGrid[[1]]
   } else {
-    occGrid <- do.call(rast, occGrid)
+    occGrid <- do.call(terra::rast, occGrid)
   }
   ### 1.2 ==== Generate the spatial random effects mesh ====
   # Make a sf of climate covariates
-  cellPoints <- sf::st_as_sf(cbind(terra::crds(inClimateData, df = TRUE, na.rm = FALSE), terra::values(inClimateData, dataframe = TRUE)), coords = c("x", "y"), crs = sf::st_crs(envCovars))
+  cellPoints <- sf::st_as_sf(cbind(terra::crds(inClimateData, df = TRUE, na.rm = FALSE), terra::values(inClimateData, dataframe = TRUE)), coords = c("x", "y"), crs = sf::st_crs(inClimateData))
   inCovarNames <- names(cellPoints)[names(cellPoints) != "geometry"]
   useRow <- !apply(X = as.matrix(as.data.frame(cellPoints)[, inCovarNames]), FUN = anyNA, MARGIN = 1)
   boundHull <- NULL

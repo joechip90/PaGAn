@@ -22,7 +22,24 @@ is rarely set directly by the user but by the model definition functions
 \value{
 A list element with the following named elements:
 \describe{
-\item{\code{code}}{}
+\item{\code{name}}{A character scalar containing the name of the
+hierarchical effect and is used as a name for intermediary variables}
+\item{\code{code}}{A character scalar containing the NIMBLE code specifying
+the hierarchical effect (and will be passed to
+\code{\link[nimble]{nimbleCode}})}
+\item{\code{constants}}{A list containing named elements corresponding to
+the variables used as constants needed for the hierarchical effect in
+\code{\link[nimble]{nimbleModel}}}
+\item{\code{data}}{A list containign named elements corrsponding to the
+data nodes used for the hierarchical effect in
+\code{\link[nimble]{nimbleModel}}}
+\item{\code{inits}}{A named list of starting values for model variables used
+in the hierarchical effect and passed to \code{\link[nimble]{nimbleModel}}}
+\code{monitors}{The nodes of the hierarchical effect to
+ monitor in the MCMC and passed to \code{\link[nimble]{configureMCMC}}}
+\code{monitors2}{The nodes of the hierarchical effect to
+ monitor in the supplemental chain monitor in the MCMC and passed to
+ \code{\link[nimble]{configureMCMC}}}
 }
 }
 \description{
@@ -30,7 +47,8 @@ Function to specify a hierarchical component with a Bayesian
 model specification
 }
 \seealso{
-\code{\link[nimble]{nimbleCode}}
+\code{\link[nimble]{nimbleCode}},
+\code{\link[nimble]{configureMCMC}}
 }
 \author{
 Joseph D. Chipperfield, \email{joechip90@googlemail.com}

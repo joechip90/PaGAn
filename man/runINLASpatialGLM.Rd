@@ -71,7 +71,7 @@ A \code{list} containing two elements:
 \describe{
 \item{modelSummaries}{A list of \code{\link[INLA]{inla}} model objects for
 each species in the \code{occurrenceData} \code{data.frame}.}
-\item{spatialMesh}{A \code{\link[sp::SpatialPolygons]{SpatialPolygons}}
+\item{spatialMesh}{A \code{SpatialPolygons}
 object containing the spatial mesh used in the
 \code{\link[INLA]{inla}} function.}
 }
@@ -80,10 +80,6 @@ object containing the spatial mesh used in the
 This function performs a generalised linear regression model with a spatial
 SPDE random effect using INLA on provided occurrence data and a set of linear
 covariates.
-}
-\seealso{
-\code{\link[sp::SpatialGridDataFrame]{SpatialGridDataFrame}} \code{\link[INLA::inla.mesh.2d]{inla.mesh.2d}}
-\code{\link[INLA::inla.nonconvex.hull]{inla.nonconvex.hull}}
 }
 \author{
 Joseph D. Chipperfield, \email{joseph.chipperfield@nmbu.no}

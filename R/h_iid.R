@@ -1,3 +1,29 @@
+#' @title Specify an IDD Random Hierarchical Effect
+#'
+#' @description Function used to specify a hierarchical effect that is a
+#' random vector of independent and identically (Gaussian) distributed random
+#' variables
+#'
+#' @param var The variable around which the hierarchical effect will be defined
+#' @param centreCovs A logical scalar denoting whether the fixed effects in the
+#' model should be centred before the analysis: each covariate element is
+#' subtracted by its mean. \code{centreCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead centred around the output of this function.
+#' @param scaleCovs A logical scalar denoting whether the fixed effects in the
+#' model should be scaled before the analysis: each covariate element is divided
+#' by its standard deviation. \code{scaleCovs} can also be a function with one
+#' argument that is a vector of covariate values. In this case the variable is
+#' instead scaled around the output of this function.
+#' @param suffix A character scalar that will be appended to all variables used
+#' in the NIMBLE code (including constants and data).
+#' @param iidSDPrior A character scalar containing the NIMBLE code (that
+#' will be processed in \code{\link[nimble]{nimbleCode}}) that defines the
+#' prior for the standard deviation of the random effect.
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}}, \code{\link{h}}
+#' @export
 h.iid <- function(var, centreCovs = FALSE, scaleCovs = FALSE, suffix = "", iidSDPrior = "dgamma(0.001, 0.001)") {
   # Initialise an output list containing the defined NIMBLE components in the
   # hierarchical specification
