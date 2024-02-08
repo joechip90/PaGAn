@@ -19,11 +19,13 @@ library(terra)
 library(tidyterra)
 library(PaGAn)
 library(ggplot2)
+library(fmesher)
 library(INLA)
 library(inlabru)
 library(sf)
-source()
-source()
+library(rgbif)
+source("https://raw.githubusercontent.com/joechip90/PaGAn/master/R/priorityMesh.R")
+source("https://raw.githubusercontent.com/joechip90/PaGAn/master/R/gbifDownload.R")
 ```
 
 ## Setting up the Workspace
@@ -155,12 +157,13 @@ findCovar <- function(where, data, layer) {
   }
   outVal
 }
+standardLikeli <- geometry ~ temp * findCovar(.data., envCovars, "temp") + prec * findCovar(.data., envCovars, "prec") +
+      tempSq * findCovar(.data., envCovars, "temp")^2 + precSq * findCovar(.data., envCovars, "prec")^2 + Intercept
 # Fit the model
 standardSDM <- bru(
-  ~ temp(findCovar(.data., envCovars, "temp"), model = "linear") + prec(findCovar(.data., envCovars, "prec"), model = "linear") +
-      tempSq(findCovar(.data., envCovars, "temp")^2, model = "linear") + precSq(findCovar(.data., envCovars, "prec")^2, model = "linear") + Intercept(1),
+  ~ temp(1) + tempSq(1) + prec(1) + precSq(1) + Intercept(1),
   like(
-    formula = geometry ~ .,
+    formula = standardLikeli,
     family = "cp",
     data = occData,
     samplers = norwayVector,
@@ -169,7 +172,7 @@ standardSDM <- bru(
   options = list(control.inla = list(int.strategy = "eb"))
 )
 # Make a prediction using the model
-standardSDMPred <- predict(standardSDM, fm_pixels(effMesh, mask = norwayVector), ~ exp(temp + prec + tempSq + precSq + Intercept))
+standardSDMPred <- predict(standardSDM, fm_pixels(effMesh, mask = norwayVector), as.formula(paste(as.character(standardLikeli)[c(1, 3)], collapse = " ")))
 # Plot the mean prediction
 ggplot() + gg(standardSDMPred, mapping = aes(fill = mean), geom = "tile") +
   scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(171, 130, 255, maxColorValue = 255), na.value = NA)
@@ -180,13 +183,10 @@ standardSDMPred$uncert <- standardSDMPred$q0.975 - standardSDMPred$q0.025
 ggplot() + gg(standardSDMPred, mapping = aes(fill = uncert), geom = "tile") +
   scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(219, 112, 147, maxColorValue = 255), na.value = NA)
 ```
-```{r}
-standardSDMPred_resp <- predict(standardSDM, , ~ exp(temp + prec + tempSq + precSq + Intercept))
-```
 
 ```{r spatialSDMImplementation}
 # Construct the latent model components
-maternField <- inla.spde2.pcmatern(effMesh, prior.sigma = c(0.1, 0.01), prior.range = c(0.1, 0.01))
+maternField <- inla.spde2.matern(effMesh)
 # Fit the model
 spatialSDM <- bru(
   ~ temp(findCovar(.data., envCovars, "temp"), model = "linear") + prec(findCovar(.data., envCovars, "prec"), model = "linear") +
@@ -202,7 +202,12 @@ spatialSDM <- bru(
   options = list(control.inla = list(int.strategy = "eb"))
 )
 # Predict the intensity of points (using both spatial random effects and the covariates)
-spatialSDMPred_full <- predict(spatialSDM, fm_pixels(effMesh, mask = norwayVector), ~ exp(spatSmooth + temp + prec + tempSq + precSq + Intercept))
+spatialSDMPred_full <- predict(spatialSDM, fm_pixels(effMesh, mask = norwayVector), ~ temp + tempSq + prec + precSq + spatSmooth + Intercept)
 ggplot() + gg(spatialSDMPred_full, geom = "tile") +
+  scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(171, 130, 255, maxColorValue = 255), na.value = NA)
+```
+```{r}
+spatialSDMPred_climate <- predict(spatialSDM, fm_pixels(effMesh, mask = norwayVector), ~ temp + tempSq + prec + precSq + Intercept)
+ggplot() + gg(spatialSDMPred_climate, geom = "tile") +
   scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(171, 130, 255, maxColorValue = 255), na.value = NA)
 ```

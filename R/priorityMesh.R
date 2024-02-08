@@ -31,8 +31,8 @@
 #' \code{\link[terra]{SpatRaster}}, \code{\link[terra]{terrain}},
 #' \code{\link[terra]{writeRaster}}
 #' @export
-priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = function(curRaster, writeOptions = writeOptions) {
-  do.call(terra::terrain, append(list(x = curRaster, v = "slope", filename = tempfile(fileext = ".tif")), as.list(writeOptions)))
+priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = function(curRaster, extraOptions = writeOptions) {
+  do.call(terra::terrain, append(list(x = curRaster, v = "slope", filename = tempfile(fileext = ".tif")), as.list(extraOptions)))
 }, filename = NULL, writeOptions = list()) {
   ### 1.1.1 ---- Sanity check the inputs ----
   ellipsisArgs <- eval(substitute(list(...)))
