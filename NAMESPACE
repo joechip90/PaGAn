@@ -2,6 +2,7 @@
 
 S3method(autoplot,fm_mesh_2d_intensity)
 export(autoplot)
+export(brumble)
 export(createZMatrix)
 export(customError)
 export(customLink)

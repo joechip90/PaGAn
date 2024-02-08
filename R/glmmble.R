@@ -59,13 +59,13 @@
 #' \code{\link[nimble]{buildMCMC}}, \code{\link[nimble]{nimbleCode}},
 #' \code{\link{modelDefinitionToNIMBLE}}, \code{\link{mcmcNIMBLERun}}
 #' @export
-glmmble <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE, suffix = "", mcCores = 1, ...) {
+glmmble <- function(formula, data, family = "gaussian", link = "identity", centreCovs = TRUE, scaleCovs = TRUE, suffix = "", mcCores = 1, runTimeGlobal = list(), initCode = list(), ...) {
   ### 1.1.1 ---- Process the model formula to create a NIMBLE specification ----
   modConf <- modelDefinitionToNIMBLE(formula = formula, data = data, family = family, link = link, centreCovs = centreCovs, scaleCovs = scaleCovs, suffix = suffix, ...)
   ### 1.1.2 ---- Process any extra NIMBLE arguments have been passed via the ellipsis ----
   allParameters <- append(mergeNIMBLEInputs(modConf, ...), list(mcCores = mcCores))
   ### 1.1.3 ---- Run the model with the given arguments ----
-  modelOutputs <- do.call(mcmcNIMBLERun, allParameters)
+  modelOutputs <- do.call(mcmcNIMBLERun, allParameters, runTimeGlobal, initCode)
   outModel <- append(modConf, modelOutputs)
   class(outModel) <- c("glmmble_model")
   outModel

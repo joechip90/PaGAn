@@ -23,18 +23,21 @@ Imports:
     parallelly,
     coda,
     rlang,
-    INLA,
     sf,
     fmesher,
     terra,
     tidyterra,
-    ggplot2
+    ggplot2,
+    inlabru,
+    utils,
+    rgbif
 Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown
 Enhances:
-    future
+    future,
+    INLA
 VignetteBuilder:
     knitr
 LazyData: true

@@ -240,9 +240,20 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #' \code{\link[nimble]{nimbleModel}}, \code{\link[nimble]{compileNimble}},
 #' \code{\link[nimble]{buildMCMC}},  \code{\link[nimble]{nimbleCode}}
 #' @export
-mcmcNIMBLERun <- function(..., mcCores = 1) {
+mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = list()) {
   ### 1.3.1 ---- Define single-run function ----
-  doNIMBLERun <- function(nimbleArgs, overrideWAIC = FALSE) {
+  doNIMBLERun <- function(nimbleArgs, overrideWAIC = FALSE, runTimeGlobal = runTimeGlobal, initCode = list()) {
+    # Add the global variables to the current environment
+    list2env(runTimeGlobal, envir = environment())
+    # Perform any special initialisation that the user has suggested
+    # This is commonly used for registering custom distributions in NIMBLE
+    if(is.language(initCode)) {
+      eval(initCode)
+    } else {
+      for(curInit in as.list(initCode)) {
+        eval(curInit)
+      }
+    }
     tempCode <- substitute(nimble::nimbleCode(inCode), list(inCode = nimbleArgs$nimbleModel$code))
     # Create the model object
     tempModel <- do.call(nimble::nimbleModel, append(
@@ -271,12 +282,14 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     # Run the MCMC
     mcmcOutput <- do.call(nimble::runMCMC, nimbleArgs$runMCMC)
     # Return the output as a concatenation of the list
-    append(
+    outOb <- append(
       list(
         modelObject = nimbleArgs$configureMCMC$conf,
         mcmcObject = nimbleArgs$compileNimble$mcmcPaGAn
       ), mcmcOutput
     )
+    class(outOb) <- "nimble_PaGAn"
+    outOb
   }
   ### 1.3.2 ---- Sanity check the parameters ----
   # Sanity check the number of cores
@@ -342,7 +355,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     ### 1.3.3 ---- Run the single-core version of the function ----
     # If there is either one core or one chain then there is no benefit to distributing the
     # chains across multiple processes
-    outValue <- doNIMBLERun(nimbleArgs, FALSE)
+    outValue <- doNIMBLERun(nimbleArgs, FALSE, runTimeGlobal, initCode)
   } else {
     ### 1.3.4 ---- Run the multi-core version of the function ----
     if(!requireNamespace("future", quietly = TRUE)) {
@@ -398,6 +411,15 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
     nimbleArgs$configureMCMC$enableWAIC <- FALSE
     nimbleArgs$configureMCMC$controlWAIC <- list()
     nimbleArgs$runMCMC$WAIC <- FALSE
+    # Retrieve a list of packages that are required for the parallel runs
+    requiredPackages <- gsub(
+      "\\s*\\(.*$",
+      "",
+      unlist(strsplit(unlist(utils::packageDescription("PaGAn", fields = c("Imports", "Enhances", "Depends"))), "\\s*,\\s*", perl = TRUE)),
+      perl = TRUE)
+    requiredPackages <- unique(c(requiredPackages[requiredPackages != "R" & sapply(X = requiredPackages, FUN = function(curName) {
+      length(find.package(curName, quiet = TRUE)) > 0
+    })], loadedNamespaces()))
     # Create a function that runs MCMC chains for each core
     parallelRun <- function(procNum, nimbleArgs, logFiles, chainVec, useWAIC) {
       message("Process ", procNum, " initialising for ", chainVec[procNum], " chains with output stored in log file located at ", logFiles[procNum], "...")
@@ -411,14 +433,22 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
           sink(type = "output")
           sink(type = "message")
           close(outConnec)
-        })
+        }, add = TRUE)
         # Adjust the NIMBLE arguments for the parallelisation
         curNimbleArgs <- nimbleArgs
         curNimbleArgs$runMCMC$nchains <- chainVec[procNum]
         # Run NIMBLE using the current arguments
-        doNIMBLERun(curNimbleArgs, useWAIC)
-      }, packages = c("nimble", "coda"), seed = TRUE, earlySignal = TRUE, conditions = structure("condition", exclude = "message"),
-        globals = list(logFiles = logFiles, chainVec = chainVec, nimbleArgs = nimbleArgs, procNum = procNum, useWAIC = useWAIC, doNIMBLERun = doNIMBLERun))
+        doNIMBLERun(curNimbleArgs, useWAIC, runTimeGlobal, initCode)
+      }, packages = requiredPackages, seed = TRUE, earlySignal = TRUE, conditions = structure("condition", exclude = "message"),
+        globals = list(
+          logFiles = logFiles,
+          chainVec = chainVec,
+          nimbleArgs = nimbleArgs,
+          procNum = procNum,
+          runTimeGlobal = runTimeGlobal,
+          initCode = initCode,
+          useWAIC = useWAIC,
+          doNIMBLERun = doNIMBLERun))
     }
     # Call the MCMC with the chains distributed across the cores
     parallelOutputs <- lapply(X = 1:inNumCores, FUN = parallelRun, nimbleArgs = nimbleArgs, logFiles = logFiles, chainVec = chainVec, useWAIC = useWAIC)
@@ -519,11 +549,26 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
       # R to crash so we recompile the model here just for the WAIC calculation.  This is not super efficient
       # and will probably need to be improved later on
       cat("Recompiling model for offline WAIC calculation...\n")
-      tempModel <- do.call(nimble::nimbleModel, nimbleArgs$nimbleModel)
-      nimbleArgs$compileNimble <- c(list(modelPaGAn = tempModel), nimbleArgs$compileNimble)
-      tempCModel <- do.call(nimble::compileNimble, nimbleArgs$compileNimble)
-      mcmcOutput <- c(mcmcOutput, list(WAIC = nimble::calculateWAIC(
-        mcmc = do.call(rbind, stitchedSamples), model = tempModel, nburnin = WAICburnIn, thin = WAICthin)))
+      waicEnv <- list2env(runTimeGlobals)
+      waicCode <- quote({
+        # Perform any special initialisation that the user has suggested
+        # This is commonly used for registering custom distributions in NIMBLE
+        if(is.language(initCode)) {
+          eval(initCode)
+        } else {
+          for(curInit in as.list(initCode)) {
+            eval(curInit)
+          }
+        }
+        # Recompile the model using the nimble arguments (and any user-requested initialisation)
+        tempArgs <- nimbleArgs
+        tempModel <- do.call(nimble::nimbleModel, tempArgs$nimbleModel)
+        tempArgs$compileNimble <- c(list(modelPaGAn = tempModel), tempArgs$compileNimble)
+        tempCModel <- do.call(nimble::compileNimble, tempArgs$compileNimble)
+        mcmcOutput <<- c(mcmcOutput, list(WAIC = nimble::calculateWAIC(
+          mcmc = do.call(rbind, stitchedSamples), model = tempModel, nburnin = WAICburnIn, thin = WAICthin)))
+      })
+      eval(waicCode, envir = waicEnv)
     }
     # If the user wants the outputs in CODA format then convert the samples accordingly
     if(samplesAsCoda) {
@@ -549,9 +594,9 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
 #' @title Ensure That a Variable Name is BUGS-Compliant
 #'
 #' @description R is quite permissive with variables names and not all variable
-#' names allowed by R will result in functioning BUGS code. NIMBLE uses a dialect
-#' of BUGS and so this function will automatically convert variables names such
-#' that they can be interpreted correctly
+#' names allowed by R will result in functioning BUGS code. NIMBLE uses a
+#' dialect of BUGS and so this function will automatically convert variables
+#' names such that they can be interpreted correctly
 #'
 #' @param inNames A character vector of variable names to ensure are
 #' BUGS-compliant
@@ -573,7 +618,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1) {
 #'   "1aBadVariableName", "aBadVariableName{2}"  # Non-compliant names
 #' )
 #' outputNames <- makeBUGSFriendlyNames(inputNames, "message")
-#' # Output names now contains compliant conversions of the non-compliant names
+#' # outputNames now contains compliant conversions of the non-compliant names
 #'
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link[nimble]{nimbleCode}}
@@ -1871,7 +1916,7 @@ mergeNIMBLEInputs <- function(autoArgs, ...) {
   }
   # Retrieve ellipsis arguments
   ellipsisArgs <- eval(substitute(list(...)))
-  # NIMBLE arguments can have the 'nimble.' prefix to ensure that they are not donfused with arguments
+  # NIMBLE arguments can have the 'nimble.' prefix to ensure that they are not confused with arguments
   # for higher-level functions with the same arguments
   names(ellipsisArgs) <- gsub("^nimble\\.", "", names(ellipsisArgs), perl = TRUE)
   # Attach any extra code provided by the user to the front of the model definition

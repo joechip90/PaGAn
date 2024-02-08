@@ -1,0 +1,208 @@
+---
+title: "Species Distribution Modelling using PaGAn"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Species Distribution Modelling using PaGAn}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(terra)
+library(tidyterra)
+library(PaGAn)
+library(ggplot2)
+library(INLA)
+library(inlabru)
+library(sf)
+source()
+source()
+```
+
+## Setting up the Workspace
+
+```{r workspaceSetup}
+# Define a boundary to work within (in latitude and longitude)
+minLong <- 2.5
+maxLong <- 15
+minLat <- 56
+maxLat <- 65
+cutBox <- st_sfc(st_polygon(list(matrix(c(
+  minLong, minLat,
+  minLong, maxLat,
+  maxLong, maxLat,
+  maxLong, minLat,
+  minLong, minLat
+), ncol = 2, byrow = TRUE))), crs = gbifDefaultCRS())
+# Setup a temporary directory to hold the information
+workLoc <- tempdir()
+options(timeout = max(300, getOption("timeout")))
+# Location of a vector map of Norway (from DIVA-GIS website)
+norwayVectorLoc <- "https://biogeo.ucdavis.edu/data/diva/adm/NOR_adm.zip"
+tempNorwayVectorLoc <- file.path(workLoc, "norwayVector.zip")
+if(file.exists(tempNorwayVectorLoc)) {
+  unlink(tempNorwayVectorLoc)
+}
+if(download.file(norwayVectorLoc, tempNorwayVectorLoc, mode = "wb", method = "libcurl") != 0) {
+  stop("unable to download Norway data from server")
+}
+# Unzip the Norway vector data
+tempNorwayVectorDir <- file.path(workLoc, "norwayVector")
+if(dir.exists(tempNorwayVectorDir)) {
+  unlink(tempNorwayVectorDir, recursive = TRUE)
+}
+dir.create(tempNorwayVectorDir)
+unzip(tempNorwayVectorLoc, exdir = tempNorwayVectorDir)
+norwayVector <- st_intersection(st_transform(st_read(tempNorwayVectorDir, "NOR_adm0"), gbifDefaultCRS()), cutBox)
+ggplot(norwayVector) + geom_sf()
+```
+
+## Download Covariate Data
+
+```{r covDownload}
+# Specify the location of the WorldClim environmental covariate data
+worldClimDataLoc <- "https://biogeo.ucdavis.edu/data/worldclim/v2.1/base/wc2.1_10m_bio.zip"
+tempWorldClimLoc <- file.path(workLoc, "worldClim.zip")
+if(file.exists(tempWorldClimLoc)) {
+  unlink(tempWorldClimLoc)
+}
+if(download.file(worldClimDataLoc, tempWorldClimLoc, mode = "wb", method = "libcurl") != 0) {
+  stop("unable to download WORLDCLIM data from server")
+}
+# Unzip the WORLDCLIM data
+tempWorldClimDir <- file.path(workLoc, "worldClim")
+if(dir.exists(tempWorldClimDir)) {
+  unlink(tempWorldClimDir, recursive = TRUE)
+}
+dir.create(tempWorldClimDir)
+unzip(tempWorldClimLoc, exdir = tempWorldClimDir)
+# Retrieve the locations of the mean annual temperature and mean annual precipitation files
+tempGIFLoc <- file.path(tempWorldClimDir, dir(tempWorldClimDir)[grepl("_1\\.tif$", dir(tempWorldClimDir), perl = TRUE)])
+precGIFLoc <- file.path(tempWorldClimDir, dir(tempWorldClimDir)[grepl("_12\\.tif$", dir(tempWorldClimDir), perl = TRUE)])
+envCovars <- rast(list(temp = rast(tempGIFLoc), prec = rast(precGIFLoc)))
+
+# Make sure that that coordinate reference system for the administrative data is the same as
+# the covariate data
+norwayVector <- st_transform(norwayVector, crs = st_crs(envCovars))
+# Crop the covariate data to the administrative data
+envCovars <- crop(envCovars, norwayVector, mask = TRUE)
+# Centre and scale the covariates for easier model fitting
+envCovars$temp <- (envCovars$temp - mean(values(envCovars$temp), na.rm = TRUE)) / sd(values(envCovars$temp), na.rm = TRUE)
+envCovars$prec <- (envCovars$prec - mean(values(envCovars$prec), na.rm = TRUE)) / sd(values(envCovars$prec), na.rm = TRUE)
+```
+
+```{r tempDataVis}
+# Plot the temperature data
+ggplot() + geom_spatraster(aes(fill = temp), data = envCovars) +
+  scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(255, 106, 106, maxColorValue = 255), na.value = NA)
+```
+
+```{r precDataVis}
+# Plot the precipitation data
+ggplot() + geom_spatraster(aes(fill = prec), data = envCovars) +
+  scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(125, 158, 192, maxColorValue = 255), na.value = NA)
+```
+
+## Finding and Downloading Occurrence Data from GBIF
+
+```{r namesQuery}
+# Some example dragonfly species to use and model
+speciesToUse <- c(
+  "Aeshna grandis"          # Glågrønnlibelle
+)
+# Access the GBIF names databases and find a list of matching species
+matchedTaxa <- taxonLookup(species = speciesToUse, order = "Odonata")
+knitr::kable(head(matchedTaxa), "html")
+```
+
+```{r querySetup}
+# Setup a query to pass to the GBIF occurrence API
+# This query asks for just the records associated with the retrieved taxon keys (from the lookup) for Norway after 1960
+queryText <- jsonOccFormulation(TAXON_KEY = matchedTaxa$key, COUNTRY = "NO", YEAR.min = 1960,
+  HAS_GEOSPATIAL_ISSUE = FALSE, HAS_COORDINATE = TRUE,
+  DECIMAL_LATITUDE.range = c(minLat, maxLat), DECIMAL_LONGITUDE.range = c(minLong, maxLong),
+  user = Sys.getenv("GBIFUser"), email = Sys.getenv("GBIFEmail"))
+cat(queryText)
+```
+```{r occDownload}
+# Retrieve the occurrence data from the GBIF servers
+occData <- gbifOccDownload(user = Sys.getenv("GBIFUser"), pwd = Sys.getenv("GBIFPass"), email = Sys.getenv("GBIFEmail"), body = queryText, tmploc = workLoc)
+# Ensure that the occurrence data share the same CRS as the covariates
+occData <- st_transform(occData, st_crs(envCovars))
+ggplot() + geom_sf(data = norwayVector) + geom_sf(data = occData, size = 0.5)
+```
+
+```{r meshCreation}
+effMesh <- priorityMesh(envCovars, 100, loc = st_as_sfc(occData), cutoff = 0.2, max.edge = c(1, 2) * 2)
+autoplot(effMesh, show.initialLocs = FALSE)
+```
+```{r standardSDMImplementation}
+# We make a couple of functions that allow us to look what the value of a covariate is
+# for an arbitrary location
+findCovar <- function(where, data, layer) {
+  # Extract the values
+  outVal <- eval_spatial(data, where, layer = layer)
+  # Fill in missing values
+  if(any(is.na(outVal))) {
+    outVal <- bru_fill_missing(data, where, outVal, layer = layer)
+  }
+  outVal
+}
+# Fit the model
+standardSDM <- bru(
+  ~ temp(findCovar(.data., envCovars, "temp"), model = "linear") + prec(findCovar(.data., envCovars, "prec"), model = "linear") +
+      tempSq(findCovar(.data., envCovars, "temp")^2, model = "linear") + precSq(findCovar(.data., envCovars, "prec")^2, model = "linear") + Intercept(1),
+  like(
+    formula = geometry ~ .,
+    family = "cp",
+    data = occData,
+    samplers = norwayVector,
+    domain = list(geometry = effMesh)
+  ),
+  options = list(control.inla = list(int.strategy = "eb"))
+)
+# Make a prediction using the model
+standardSDMPred <- predict(standardSDM, fm_pixels(effMesh, mask = norwayVector), ~ exp(temp + prec + tempSq + precSq + Intercept))
+# Plot the mean prediction
+ggplot() + gg(standardSDMPred, mapping = aes(fill = mean), geom = "tile") +
+  scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(171, 130, 255, maxColorValue = 255), na.value = NA)
+```
+```{r}
+# Plot the uncertainty around the prediction
+standardSDMPred$uncert <- standardSDMPred$q0.975 - standardSDMPred$q0.025
+ggplot() + gg(standardSDMPred, mapping = aes(fill = uncert), geom = "tile") +
+  scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(219, 112, 147, maxColorValue = 255), na.value = NA)
+```
+```{r}
+standardSDMPred_resp <- predict(standardSDM, , ~ exp(temp + prec + tempSq + precSq + Intercept))
+```
+
+```{r spatialSDMImplementation}
+# Construct the latent model components
+maternField <- inla.spde2.pcmatern(effMesh, prior.sigma = c(0.1, 0.01), prior.range = c(0.1, 0.01))
+# Fit the model
+spatialSDM <- bru(
+  ~ temp(findCovar(.data., envCovars, "temp"), model = "linear") + prec(findCovar(.data., envCovars, "prec"), model = "linear") +
+      tempSq(findCovar(.data., envCovars, "temp")^2, model = "linear") + precSq(findCovar(.data., envCovars, "prec")^2, model = "linear") +
+      spatSmooth(geometry, model = maternField) + Intercept(1),
+  like(
+    formula = geometry ~ .,
+    family = "cp",
+    data = occData,
+    samplers = norwayVector,
+    domain = list(geometry = effMesh)
+  ),
+  options = list(control.inla = list(int.strategy = "eb"))
+)
+# Predict the intensity of points (using both spatial random effects and the covariates)
+spatialSDMPred_full <- predict(spatialSDM, fm_pixels(effMesh, mask = norwayVector), ~ exp(spatSmooth + temp + prec + tempSq + precSq + Intercept))
+ggplot() + gg(spatialSDMPred_full, geom = "tile") +
+  scale_fill_gradient(low = rgb(255, 255, 240, maxColorValue = 255), high = rgb(171, 130, 255, maxColorValue = 255), na.value = NA)
+```

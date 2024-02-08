@@ -50,3 +50,4 @@ Temporary Items
 # Files genererated by R environments
 .Rhistory
 *.Rproj
+inst/doc

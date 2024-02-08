@@ -18,16 +18,40 @@
 #' will be applied to the covariate information. The default option is that the
 #' slope of the covariates will be calculated through the application of the
 #' \code{\link[terra]{terrain}} function.
+#' @param filename An optional character scalar giving the location to store the
+#' calculated intensity raster object. If this value is NULL (the default) then
+#' the raster is not stored in a file.
+#' @param writeOptions A list of named options to be passed to the
+#' \code{\link[terra]{writeRaster}} function when producing raster outputs.
 #'
 #' @return An \code{inla.mesh} object
 #'
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
-#' @seealso \code{\link[fmesher]{fm_mesh_2d_inla}}
-#' \code{\link[terra]{SpatRaster}} \code{\link[terra]{terrain}}
+#' @seealso \code{\link[fmesher]{fm_mesh_2d_inla}},
+#' \code{\link[terra]{SpatRaster}}, \code{\link[terra]{terrain}},
+#' \code{\link[terra]{writeRaster}}
 #' @export
-priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = terra::terrain) {
+priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = function(curRaster, writeOptions = writeOptions) {
+  do.call(terra::terrain, append(list(x = curRaster, v = "slope", filename = tempfile(fileext = ".tif")), as.list(writeOptions)))
+}, filename = NULL, writeOptions = list()) {
   ### 1.1.1 ---- Sanity check the inputs ----
   ellipsisArgs <- eval(substitute(list(...)))
+  # Sanity check the filename input
+  inFileName <- filename
+  if(!is.null(inFileName)) {
+    inFileName <- tryCatch(as.character(inFileName), error = function(err) {
+      stop("invalid argument given for the intensity raster file name: ", err)
+    })
+    if(length(inFileName) <= 0) {
+      inFileName <- NULL
+    } else if(length(inFileName) > 1) {
+      warning("argument for the intensity raster file name has a length greater than one: only the first element will be used")
+      inFileName <- inFileName[1]
+    }
+    if(is.na(inFileName) || inFileName == "") {
+      inFileName <- NULL
+    }
+  }
   # Function to import arguments that can be a matrix or a set of sf points
   importPointArg <- function(inArg, crsToUse) {
     outOb <- NULL
@@ -161,6 +185,12 @@ priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = t
     intensityFrame <- cbind(as.data.frame(retrCoords), data.frame(intensity = covarSum))
     intensityPoints <- sf::st_as_sf(intensityFrame, coords = c("x", "y"), crs = crsToUse)
     intensityRast <- terra::rast(intensityFrame, type = "xyz", crs = crsToUse$wkt)
+    if(!is.null(inFileName)) {
+      do.call(terra::writeRaster, append(list(
+        x = intensityRast,
+        filename = inFileName
+      ), as.list(writeOptions)))
+    }
     if(!is.null(names(ellipsisArgs)) && all("boundary" != names(ellipsisArgs))) {
       ellipsisArgs <- append(ellipsisArgs, list(
         # If the user hasn't set a "boundary" argument then use the boundary of the non-zero
@@ -272,6 +302,9 @@ priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = t
   meshClass <- class(meshOut)
   # Add the intensity and initial point placement information and define
   # the class of the object to be of type "fm_mesh_2d_intensity"
+  if(!is.null(intensityRast)) {
+    intensityRast <- terra::wrap(intensityRast)
+  }
   meshOut <- append(meshOut, list(intensity = intensityRast, initialLocs = locIn, boundary = outBoundary))
   class(meshOut) <- c("fm_mesh_2d_intensity", meshClass)
   meshOut
@@ -298,11 +331,11 @@ priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = t
 #' following optional arguments that control the look of elements related to the
 #' aesthetic properties of the plot:
 #' \describe{
-#'  \item{\code{show.intensity}} {A logical that if \code{TRUE} (the default)
+#'  \item{\code{show.intensity}}{A logical that if \code{TRUE} (the default)
 #'  displays the intensity surface.}
-#'  \item{\code{show.initialLocs}} {A logical that if \code{TRUE} (the default)
+#'  \item{\code{show.initialLocs}}{A logical that if \code{TRUE} (the default)
 #'  displays the initial triangulation points.}
-#'  \item{\code{show.boundary}} {A logical that if \code{TRUE} (the default)
+#'  \item{\code{show.boundary}}{A logical that if \code{TRUE} (the default)
 #'  displays the boundary.}
 #'  \item{\code{low.intensity.col}}{A character scalar containing the colour to
 #'  use for the cells with the lowest intensity values in the intensity surface.
@@ -361,7 +394,7 @@ autoplot.fm_mesh_2d_intensity <- function(object, ...) {
   show.boundary <- retrieveOtherArgs("show.boundary", ..., defaultVal = TRUE)
   # Create a set of default elements for the geometries
   defaultArgs <- alist(
-    intensity.data = object$intensity,
+    intensity.data = terra::unwrap(object$intensity),
     intensity.show.legend = FALSE,
     mesh.fill = NA,
     mesh.colour = grDevices::rgb(170, 170, 170, maxColorValue = 255),

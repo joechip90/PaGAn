@@ -8,7 +8,13 @@ priorityMesh(
   covars = NULL,
   numCovarPoints = 100,
   ...,
-  funcApply = terra::terrain
+  funcApply = function(curRaster, writeOptions = writeOptions) {
+    
+    do.call(terra::terrain, append(list(x = curRaster, v = "slope", filename =
+    tempfile(fileext = ".tif")), as.list(writeOptions)))
+ },
+  filename = NULL,
+  writeOptions = list()
 )
 }
 \arguments{
@@ -28,6 +34,13 @@ priority analysis is performed.  A calue of \code{NULL} mean that no function
 will be applied to the covariate information. The default option is that the
 slope of the covariates will be calculated through the application of the
 \code{\link[terra]{terrain}} function.}
+
+\item{filename}{An optional character scalar giving the location to store the
+calculated intensity raster object. If this value is NULL (the default) then
+the raster is not stored in a file.}
+
+\item{writeOptions}{A list of named options to be passed to the
+\code{\link[terra]{writeRaster}} function when producing raster outputs.}
 }
 \value{
 An \code{inla.mesh} object
@@ -38,9 +51,10 @@ where there are larger changes in the values of a set of environmental
 covariates
 }
 \seealso{
-\code{\link[fmesher]{fm_mesh_2d_inla}}
-\code{\link[terra]{SpatRaster}} \code{\link[terra]{terrain}}
+\code{\link[fmesher]{fm_mesh_2d_inla}},
+\code{\link[terra]{SpatRaster}}, \code{\link[terra]{terrain}},
+\code{\link[terra]{writeRaster}}
 }
 \author{
-Joseph D. Chipperfield, \email{joseph.chipperfield@nmbu.no}
+Joseph D. Chipperfield, \email{joechip90@googlemail.com}
 }

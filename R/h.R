@@ -65,7 +65,7 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
     attr(inVar, "scaleFactors") <- stats::setNames(rep(NA, length(inLevels)), inLevels)
   }
   # Add the name of the effect to the output as an attribute
-  attr(inVar, "effectName") <- makeBUGSFriendlyNames(effectName, "warning", FALSE)
+  attr(inVar, "effectName") <- makeBUGSFriendlyNames(effectName, NA, FALSE)
   inVar
 }
 
@@ -75,6 +75,7 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
 #' @description Function to specify a hierarchical component with a Bayesian
 #' model specification
 #'
+#' @param var The variable around which the hierarchical effect will be defined
 #' @param ... Named arguments to be passed to the hierarchical model
 #' specification
 #' @param model Either a character scalar giving the name of the
@@ -95,7 +96,7 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
 #'  \item{\code{constants}}{A list containing named elements corresponding to
 #'  the variables used as constants needed for the hierarchical effect in
 #'  \code{\link[nimble]{nimbleModel}}}
-#'  \item{\code{data}}{A list containign named elements corrsponding to the
+#'  \item{\code{data}}{A list containing named elements corresponding to the
 #'  data nodes used for the hierarchical effect in
 #'  \code{\link[nimble]{nimbleModel}}}
 #'  \item{\code{inits}}{A named list of starting values for model variables used
@@ -111,7 +112,7 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
 #' @seealso \code{\link[nimble]{nimbleCode}},
 #' \code{\link[nimble]{configureMCMC}}
 #' @export
-h <- function(..., model, parentSuffix = "") {
+h <- function(var, ..., model, parentSuffix = "") {
   ### 1.2.1 ---- Sanity check the model argument ----
   inModel <- model
   hOutput <- inModel
@@ -152,7 +153,7 @@ h <- function(..., model, parentSuffix = "") {
     }
     ### 1.2.3 ---- Run the hierarchical model specification ----
     # Take the relevant parameters for the hierarchical specification function from the ellipsis arguments
-    modelArgs <- processEllipsisArgs(inModel, ...)
+    modelArgs <- append(alist(var = var), processEllipsisArgs(inModel, ...))
     if("suffix" %in% names(modelArgs)) {
       # Append the parent suffix
       modelArgs[["suffix"]] <- paste0(modelArgs[["suffix"]], inParentSuffix)
@@ -164,7 +165,8 @@ h <- function(..., model, parentSuffix = "") {
   }
   ### 1.2.4 ---- Ensure consistent output of the h function ----
   modelOutput <- list(
-    name = character(),
+    # Initialise the name of effect to be the deparsed name of the 'var' argument
+    name = makeBUGSFriendlyNames(deparse(substitute(var)), NA, FALSE),
     code = character(),
     constants = list(),
     data = list(),
