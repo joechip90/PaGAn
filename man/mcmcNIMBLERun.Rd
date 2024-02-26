@@ -4,7 +4,7 @@
 \alias{mcmcNIMBLERun}
 \title{Run NIMBLE using the specified arguments}
 \usage{
-mcmcNIMBLERun(..., mcCores = 1)
+mcmcNIMBLERun(..., mcCores = 1, runTimeGlobal = list(), initCode = list())
 }
 \arguments{
 \item{...}{Named arguments to be passed to the constituent NIMBLE functions
@@ -20,6 +20,12 @@ argument}
 \item{mcCores}{An integer scalar giving the number of cores to distribute the
 chains between. A value of \code{NA} sets the number of cores to be equal to
 the number available on the system}
+
+\item{runTimeGlobal}{A named list of objects to pass to each of the instances
+of NIMBLE at run time}
+
+\item{initCode}{Either a language object or a list of language objects
+containing code to run at the beginning of each NIMBLE instance}
 }
 \value{
 A list containing the following named elements:

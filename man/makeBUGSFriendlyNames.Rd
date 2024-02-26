@@ -26,9 +26,9 @@ A character vector of BUGS-compliant variable names
 }
 \description{
 R is quite permissive with variables names and not all variable
-names allowed by R will result in functioning BUGS code. NIMBLE uses a dialect
-of BUGS and so this function will automatically convert variables names such
-that they can be interpreted correctly
+names allowed by R will result in functioning BUGS code. NIMBLE uses a
+dialect of BUGS and so this function will automatically convert variables
+names such that they can be interpreted correctly
 }
 \examples{
 # A mixture of variable names
@@ -37,7 +37,7 @@ inputNames <- c(
   "1aBadVariableName", "aBadVariableName{2}"  # Non-compliant names
 )
 outputNames <- makeBUGSFriendlyNames(inputNames, "message")
-# Output names now contains compliant conversions of the non-compliant names
+# outputNames now contains compliant conversions of the non-compliant names
 
 }
 \seealso{

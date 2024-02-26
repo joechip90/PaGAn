@@ -4,9 +4,11 @@
 \alias{h}
 \title{Define a Hierarchical Component in a Linear Model}
 \usage{
-h(..., model, parentSuffix = "")
+h(var, ..., model, parentSuffix = "")
 }
 \arguments{
+\item{var}{The variable around which the hierarchical effect will be defined}
+
 \item{...}{Named arguments to be passed to the hierarchical model
 specification}
 
@@ -30,7 +32,7 @@ the hierarchical effect (and will be passed to
 \item{\code{constants}}{A list containing named elements corresponding to
 the variables used as constants needed for the hierarchical effect in
 \code{\link[nimble]{nimbleModel}}}
-\item{\code{data}}{A list containign named elements corrsponding to the
+\item{\code{data}}{A list containing named elements corresponding to the
 data nodes used for the hierarchical effect in
 \code{\link[nimble]{nimbleModel}}}
 \item{\code{inits}}{A named list of starting values for model variables used

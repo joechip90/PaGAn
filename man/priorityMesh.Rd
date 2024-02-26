@@ -8,10 +8,10 @@ priorityMesh(
   covars = NULL,
   numCovarPoints = 100,
   ...,
-  funcApply = function(curRaster, writeOptions = writeOptions) {
+  funcApply = function(curRaster, extraOptions = writeOptions) {
     
     do.call(terra::terrain, append(list(x = curRaster, v = "slope", filename =
-    tempfile(fileext = ".tif")), as.list(writeOptions)))
+    tempfile(fileext = ".tif")), as.list(extraOptions)))
  },
   filename = NULL,
   writeOptions = list()
