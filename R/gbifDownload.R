@@ -1134,7 +1134,7 @@ datasetplot <- function(object, ..., titleLabelWidth = 40) {
     inObject$datasetTitle <- processDatasetTitle(attr(inObject, "datasets")[inObject$datasetKey, "datasetTitle"], titleLabelWidth)
   }
   # Create the dataset point plot
-  occPoints <- autoplot.gbifOcc(inObject, ..., titleLabelWidth = titleLabelWidth)
+  occPoints <- do.call(autoplot.gbifOcc, append(list(object = inObject, titleLabelWidth = titleLabelWidth), eval(substitute(alist(...)))))
   # Create bar plot of samples over each year
   yearBar <- ggplot2::ggplot(data = inObject, ggplot2::aes(x = get("year"))) + do.call(ggplot2::geom_bar, retrievePrefixArgs("yearbar", ..., defaultArgs = defaultPlotParams)) +
     ggplot2::ylab("Count") + ggplot2::xlab("Year") + ggplot2::theme_classic()
