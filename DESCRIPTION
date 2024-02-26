@@ -16,7 +16,7 @@ Description: A package of convienient implementations of models used in paleo-ec
     uses the Bayesian software packages NIMBLE and INLA to allow for hierarchical model specifications.
 License: GPL-3
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.1
 Imports:
     methods,
     nimble,
@@ -28,9 +28,11 @@ Imports:
     terra,
     tidyterra,
     ggplot2,
-    inlabru,
     utils,
-    rgbif
+    rgbif,
+    jsonlite,
+    grid,
+    gridExtra
 Suggests:
     testthat (>= 3.0.0),
     knitr,

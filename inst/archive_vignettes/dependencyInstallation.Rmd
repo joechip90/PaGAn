@@ -1,0 +1,94 @@
+---
+title: "Installation of PaGAn Dependencies"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Installation of PaGAn Dependencies}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  echo = TRUE,
+  eval = FALSE,
+  comment = "#>"
+)
+```
+
+## Dependencies in PaGAn
+
+Whilst the installation of the PaGAn package itself is a relatively simple
+affair, it is important to note that some of the packages that PaGAn depends
+upon require some extra installation steps to ensure that the entire
+functionality is available for your system. It is worth running the following
+steps in a fresh session of R (i.e. one that does not have a lot of packages
+already loaded into the workspace).
+
+## R Version
+
+PaGAn has been written to take advantage of spatial analysis libraries that
+underwent a significant reorganisation in the move from R version 4.2.x to
+version 4.3.0. To ensure that the functionality runs as expected, then it is a
+requirement that you have R version 4.3.0 or higher installed on your system.
+
+## RTools (for Windows Users)
+
+If you are running R on Windows then you will need to have an extra set of
+compilation tools available so that model objects built in NIMBLE can be
+compiled and run. These sets of tools are collectively know as 'Rtools' and you
+must download and install the collection of Rtools that correspond to the
+version of R that you are running. The Rtools that relates to version 4.3.x of R
+is 
+[Rtools43](https://cran.r-project.org/bin/windows/Rtools/rtools43/rtools.html).
+Once Rtools is installed then you will be able to run code or install packages
+that require compilation. You can check that Rtools is installed successfully
+by running the following:
+
+```{r checkRTools}
+if(!requireNamespace("pkgbuild", quietly = TRUE)) {
+  install.packages("pkgbuild")
+}
+pkgbuild::check_rtools(TRUE)
+```
+
+## Bioconductor Packages
+
+One of PaGAn's dependencies, [INLA](https://www.r-inla.org/), has two suggested
+packages, 'graph' and 'Rgraphviz', that are on Bioconductor. The following code
+will install the bioconductor package manager ('BiocManager') if it is not
+already installed and then use that package manager to install the relevant
+dependencies:
+
+```{r bioconductorDependencies}
+if(!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+BiocManager::install(c("graph", "Rgraphviz"), dependencies = TRUE, lib = .libPaths()[1], update = TRUE, ask = FALSE)
+```
+
+## Installation of Direct Dependencies
+
+Now all that is left is to install the other direct dependencies of PaGAn. Note
+that INLA is not on [CRAN](https://cran.r-project.org/) and so its repository
+must be added to the list of repositories to search when installing the
+packages.
+
+```{r directDependencies}
+install.packages(c("INLA", "future"), repos = c(
+  getOption("repos"),
+  INLA = "https://inla.r-inla-download.org/R/stable"
+), dependencies = TRUE)
+```
+
+## Installation of PaGAn
+
+Finally, it is possible to install PaGAn directly from it's
+[GitHub repository](https://github.com/joechip90/PaGAn):
+
+```{r PaGAnInstall}
+if(!requireNamespace("devtools", quietly = TRUE)) {
+  install.packages("devtools")
+}
+devtools::install_github("joechip90/PaGAn", dependencies = TRUE)
+```

@@ -360,29 +360,6 @@ priorityMesh <- function(covars = NULL, numCovarPoints = 100, ..., funcApply = f
 #' \code{\link[ggplot2]{geom_sf}} \code{\link[tidyterra]{geom_spatraster}}
 #' @export
 autoplot.fm_mesh_2d_intensity <- function(object, ...) {
-  # Utility function to retrieve relevant ellipsis arguments
-  retrievePrefixArgs <- function(prefix, ..., defaultArgs) {
-    outArgs <- defaultArgs[grepl(paste0("^", prefix, "\\."), names(defaultArgs), perl = TRUE)]
-    names(outArgs) <- gsub(paste0("^", prefix, "\\."), "", names(outArgs), perl = TRUE)
-    ellipsisArgs <- eval(substitute(alist(...)))
-    if(!is.null(names(ellipsisArgs))) {
-      ellipsisArgs <- ellipsisArgs[grepl(paste0("^", prefix, "\\."), names(ellipsisArgs), perl = TRUE)]
-      names(ellipsisArgs) <- gsub(paste0("^", prefix, "\\."), "", names(ellipsisArgs), perl = TRUE)
-      outArgs[names(ellipsisArgs)] <- ellipsisArgs
-    }
-    outArgs
-  }
-  # Utility function to extract specific arguments
-  retrieveOtherArgs <- function(argName, ..., defaultVal) {
-    outVal <- defaultVal
-    ellipsisArgs <- eval(substitute(alist(...)))
-    if(!is.null(names(ellipsisArgs))) {
-      if(any(argName == names(ellipsisArgs))) {
-        outVal <- eval(ellipsisArgs[[argName]])
-      }
-    }
-    outVal
-  }
   # Default values for the visualisation of the aesthetic components
   low.intensity.col <- retrieveOtherArgs("low.intensity.col", ..., defaultVal = grDevices::rgb(255, 255, 240, maxColorValue = 255))
   high.intensity.col <- retrieveOtherArgs("high.intensity.col", ..., defaultVal = grDevices::rgb(110, 139, 61, maxColorValue = 255))
