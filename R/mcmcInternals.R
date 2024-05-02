@@ -188,6 +188,8 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #' of NIMBLE at run time
 #' @param initCode Either a language object or a list of language objects
 #' containing code to run at the beginning of each NIMBLE instance
+#' @param exitCode Either a language object of a list of language objects
+#' containing code to run on completion of each NIMBLE instance
 #'
 #' @return A list containing the following named elements:
 #' \describe{
@@ -244,9 +246,9 @@ nimbleParameters <- function(..., warnNotFound = FALSE) {
 #' \code{\link[nimble]{nimbleModel}}, \code{\link[nimble]{compileNimble}},
 #' \code{\link[nimble]{buildMCMC}},  \code{\link[nimble]{nimbleCode}}
 #' @export
-mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = list()) {
+mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = list(), exitCode = list()) {
   ### 1.3.1 ---- Define single-run function ----
-  doNIMBLERun <- function(nimbleArgs, overrideWAIC = FALSE, runTimeGlobal = runTimeGlobal, initCode = list()) {
+  doNIMBLERun <- function(nimbleArgs, overrideWAIC = FALSE, runTimeGlobal = runTimeGlobal, initCode = list(), exitCode = list()) {
     # Add the global variables to the current environment
     list2env(runTimeGlobal, envir = environment())
     # Perform any special initialisation that the user has suggested
@@ -256,6 +258,15 @@ mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = l
     } else {
       for(curInit in as.list(initCode)) {
         eval(curInit)
+      }
+    }
+    # Add tidy up routines to be run upon exit (often used to deregister custom
+    # distributions on exit)
+    if(is.language(exitCode)) {
+      on.exit(exitCode, add = TRUE)
+    } else {
+      for(curExit in as.list(exitCode)) {
+        on.exit(curExit, add = TRUE, after = TRUE)
       }
     }
     tempCode <- substitute(nimble::nimbleCode(inCode), list(inCode = nimbleArgs$nimbleModel$code))
@@ -313,7 +324,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = l
     inNumCores <- inNumCores[1]
   }
   if(is.na(inNumCores) || inNumCores <= 0) {
-    # If the number of cores is NA or equal to less than zero then just set the number
+    # If the number of cores is NA or equal or less than zero then just set the number
     # of cores equal to the number present in the system
     inNumCores <- parallelly::availableCores()
   }
@@ -359,7 +370,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = l
     ### 1.3.3 ---- Run the single-core version of the function ----
     # If there is either one core or one chain then there is no benefit to distributing the
     # chains across multiple processes
-    outValue <- doNIMBLERun(nimbleArgs, FALSE, runTimeGlobal, initCode)
+    outValue <- doNIMBLERun(nimbleArgs, FALSE, runTimeGlobal, initCode, exitCode)
   } else {
     ### 1.3.4 ---- Run the multi-core version of the function ----
     if(!requireNamespace("future", quietly = TRUE)) {
@@ -442,7 +453,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = l
         curNimbleArgs <- nimbleArgs
         curNimbleArgs$runMCMC$nchains <- chainVec[procNum]
         # Run NIMBLE using the current arguments
-        doNIMBLERun(curNimbleArgs, useWAIC, runTimeGlobal, initCode)
+        doNIMBLERun(curNimbleArgs, useWAIC, runTimeGlobal, initCode, exitCode)
       }, packages = requiredPackages, seed = TRUE, earlySignal = TRUE, conditions = structure("condition", exclude = "message"),
         globals = list(
           logFiles = logFiles,
@@ -451,6 +462,7 @@ mcmcNIMBLERun <- function(..., mcCores = 1, runTimeGlobal = list(), initCode = l
           procNum = procNum,
           runTimeGlobal = runTimeGlobal,
           initCode = initCode,
+          exitCode = exitCode,
           useWAIC = useWAIC,
           doNIMBLERun = doNIMBLERun))
     }

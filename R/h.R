@@ -1,3 +1,217 @@
+### 1.1 ==== Define a Hierarchical Component in a Linear Model ====
+#' @title Define a Hierarchical Component in a Linear Model
+#'
+#' @description Function to specify a hierarchical component with a Bayesian
+#' model specification
+#'
+#' @param ... Named arguments to be passed to the hierarchical model
+#' specification
+#' @param model Either a character scalar giving the name of the
+#' natively-supported hierarchical model to apply or a function implementing the
+#' hierarchical model
+#' @param parentSuffix A character scalar giving an additional suffix applied to
+#' all elements created in the hierarchical model specification. This argument
+#' is rarely set directly by the user but by the model definition functions
+#' (such as \code{\link{modelDefinitionToNIMBLE}}) when generating model code
+#' @param effName A character scalar giving a name for the hierarchical effect
+#' being defined and used as name for the appropriate nodes
+#'
+#' @return A list element with the following named elements:
+#' \describe{
+#'  \item{\code{name}}{A character scalar containing the name of the
+#'  hierarchical effect and is used as a name for intermediary variables}
+#'  \item{\code{code}}{A character scalar containing the NIMBLE code specifying
+#'  the hierarchical effect (and will be passed to
+#'  \code{\link[nimble]{nimbleCode}})}
+#'  \item{\code{constants}}{A list containing named elements corresponding to
+#'  the variables used as constants needed for the hierarchical effect in
+#'  \code{\link[nimble]{nimbleModel}}}
+#'  \item{\code{data}}{A list containing named elements corresponding to the
+#'  data nodes used for the hierarchical effect in
+#'  \code{\link[nimble]{nimbleModel}}}
+#'  \item{\code{inits}}{A named list of starting values for model variables used
+#'  in the hierarchical effect and passed to \code{\link[nimble]{nimbleModel}}}
+#'  \code{monitors}{The nodes of the hierarchical effect to
+#'  monitor in the MCMC and passed to \code{\link[nimble]{configureMCMC}}}
+#'  \code{monitors2}{The nodes of the hierarchical effect to
+#'  monitor in the supplemental chain monitor in the MCMC and passed to
+#'  \code{\link[nimble]{configureMCMC}}}
+#'  \item{\code{initCode}}{A list of language objects to run upon initialisation
+#'  of the NIMBLE instance (see \code{\link{mcmcNIMBLERun}})}
+#'  \item{\code{exitCode}}{A list of language objects to run upon completion of
+#'  the NIMBLE instance (see \code{\link{mcmcNIMBLERun}})}
+#'  \item{\code{runTimeGlobal}}{A list of objects to pass to be compied into
+#'  each environment of each NIMBLE instance (see \code{\link{mcmcNIMBLERun}})}
+#'  \item{\code{projFunc}}{A function as produced by the
+#'  \code{\link[nimble]{nimbleFunction}} function that maps the random variables
+#'  defined by the hierarchical model to the data. If \code{NULL} then it is
+#'  assumed the effect is defined with the same structure as the data already}
+#' }
+#'
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @seealso \code{\link[nimble]{nimbleCode}}, \code{\link{mcmcNIMBLERun}},
+#' \code{\link[nimble]{configureMCMC}}, \code{\link[nimble]{nimbleFunction}}
+#' @export
+h <- function(..., model, parentSuffix = "", effName = NULL) {
+  inSuffix <- ""
+  ### 1.2.1 ---- Sanity check the effect name argument ----
+  inEffName <- tryCatch(as.character(effName), error = function(err) {
+    warning("error encountered processing hierarchical effect name: using default values instead")
+    character()
+  })
+  if(length(inEffName) > 1) {
+    warning("effect name argument has length greater than one: only the first element will be used")
+    inEffName <- inEffName[1]
+  }
+  inEffName <- inEffName[!is.na(inEffName)]
+  if(length(inEffName) <= 0) {
+    # If an effect name hasn't been specified then look in the ellipsis arguments and see if there
+    # is a 'var' variables being passed to the variable arguments - if so deparse the variable name
+    # and use that for the effect name
+    inArgs <- eval(substitute(alist(...)))
+    if("var" %in% names(inArgs)) {
+      inEffName <- deparse(substitute(var, env = inArgs))
+    }
+  }
+  ### 1.2.1 ---- Sanity check the model argument ----
+  inModel <- model
+  hOutput <- inModel
+  if(!is.list(inModel)) {
+    if(is.character(inModel)) {
+      if(length(inModel) <= 0) {
+        stop("error encountered processing hierarchical model component: model argument has length of zero")
+      } else if(length(inModel) > 1) {
+        warning("model argument has length greater than one: only the first element will be used")
+        inModel <- inModel[1]
+      }
+      if(is.na(inModel)) {
+        stop("error encountered processing hierarchical model component: model argument is NA")
+      }
+      if(length(inEffName) <= 0) {
+        # If the effect name has not been specified then use the character string used to specify the model
+        inEffName <- inModel
+      }
+      if(!(inModel %in% names(hFamilies_raw))) {
+        stop("error encountered processing hierarchical model component: ", inModel, " is not a supported model type")
+      }
+      # Retrieve the model from the list of supported models
+      inModel <- hFamilies_raw[[inModel]]
+    } else {
+      # Input is a function so use it directly
+      inModel <- tryCatch(as.function(inModel), error = function(err) {
+        stop("error encountered processing hierarchical model component: ", err)
+      })
+    }
+    ### 1.2.2 ---- Sanity check the parent suffix argument ----
+    inParentSuffix <- tryCatch(as.character(parentSuffix), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    if(length(inParentSuffix) <= 0) {
+      inParentSuffix <- ""
+    } else if(length(inParentSuffix) > 1) {
+      warning("parent suffix argument has length greater than one: only the first element will be used")
+      inParentSuffix <- inParentSuffix[1]
+    }
+    if(is.na(inParentSuffix)) {
+      inParentSuffix <- ""
+    }
+    ### 1.2.3 ---- Run the hierarchical model specification ----
+    # Take the relevant parameters for the hierarchical specification function from the ellipsis arguments
+    modelArgs <- append(alist(effName = inEffName, suffix = parentSuffix), processEllipsisArgs(inModel, ...))
+    if("suffix" %in% names(modelArgs)) {
+      # Append the parent suffix
+      modelArgs[["suffix"]] <- paste0(modelArgs[["suffix"]], inParentSuffix)
+      inSuffix <- modelArgs[["suffix"]]
+    }
+    # Call the hierarchical model specification with the correct arguments
+    hOutput <- tryCatch(as.list(do.call(inModel, modelArgs)), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+  }
+  ### 1.2.4 ---- Ensure consistent output of the h function ----
+  # Some functions may not return all of these elements but they are included
+  # with default values in this list to ensure that downstream processing functions
+  # have a consistent object architecture
+  modelOutput <- list(
+    name = makeBUGSFriendlyNames(inEffName, NA, FALSE),
+    suffix = inSuffix,
+    code = character(),
+    constants = list(),
+    data = list(),
+    inits = list(),
+    monitors = character(),
+    monitors2 = character(),
+    initCode = list(),
+    exitCode = list(),
+    runTimeGlobal = list(),
+    projFunc = NULL
+  )
+  if(!is.null(names(hOutput))) {
+    # Copy across those elements in the output of the hierarchical modelling function
+    # that are acceptable outputs
+    isInOutput <- names(hOutput) %in% names(modelOutput)
+    modelOutput[names(hOutput)[isInOutput]] <- hOutput[isInOutput]
+    ### 1.2.5 ---- Sanity test the model outputs ----
+    modelOutput$name <- tryCatch(makeBUGSFriendlyNames(as.character(modelOutput$name), warnType = "warning"), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    if(length(modelOutput$name) <= 0) {
+      stop("error encountered processing hierarchical model component: effect name has length zero")
+    } else if(length(modelOutput$name) > 1) {
+      warning("effect name argument has length greater than one: only the first element will be used")
+      modelOutput$name <- modelOutput$name[1]
+    }
+    if(is.na(modelOutput$name) || modelOutput$name == "") {
+      stop("error encountered processing hierarchical model component: effect name is NA")
+    }
+    if(is.language(modelOutput$code)) {
+      # If the output has code that has been generated from the nimbleCode
+      # function then process it so that it is a string
+      modelOutput$code <- as.character(modelOutput$code)
+      if(modelOutput$code[1] == "{") {
+        if(length(modelOutput$code) > 1) {
+          modelOutput$code <- modelOutput$code[2:length(modelOutput$code)]
+        } else {
+          modelOutput$code <- ""
+        }
+      }
+    }
+    modelOutput$code <- tryCatch(as.character(modelOutput$code), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    if(length(modelOutput$code) > 1) {
+      modelOutput$code <- paste(modelOutput$code, collapse = "\n")
+    }
+    modelOutput$constants <- tryCatch(as.list(modelOutput$constants), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    modelOutput$data <- tryCatch(as.list(modelOutput$data), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    modelOutput$inits <- tryCatch(as.list(modelOutput$inits), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    modelOutput$monitors <- tryCatch(as.character(modelOutput$monitors), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    modelOutput$monitors2 <- tryCatch(as.character(modelOutput$monitors2), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
+    # Retrieve any attributes and append extra information
+    outAttr <- attributes(modelOutput)
+    if(any(!isInOutput)) {
+      # Append any extra returned information to the attributes
+      outAttr <- append(outAttr, hOutput[!isInOutput])
+    }
+    attributes(modelOutput) <- outAttr
+  }
+  ### 1.1.5 ---- Check the arguments  ----
+  if(!is.null(modelOutput$projFunc)) {
+    # Retrieve the names of the projection function
+    projFuncArgNames <- methods::formalArgs(modelOutput$projFunc)
+  }
+}
+
 ### 1.1 ==== Convert Hierarchical Effect to Z Matrix Specification ====
 #' @title Specify a Hierarchical Effect in Terms of a Transformation Matrix
 #'
@@ -67,171 +281,4 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
   # Add the name of the effect to the output as an attribute
   attr(inVar, "effectName") <- makeBUGSFriendlyNames(effectName, NA, FALSE)
   inVar
-}
-
-### 1.2 ==== Define a Hierarchical Component in a Linear Model ====
-#' @title Define a Hierarchical Component in a Linear Model
-#'
-#' @description Function to specify a hierarchical component with a Bayesian
-#' model specification
-#'
-#' @param var The variable around which the hierarchical effect will be defined
-#' @param ... Named arguments to be passed to the hierarchical model
-#' specification
-#' @param model Either a character scalar giving the name of the
-#' natively-supported hierarchical model to apply or a function implementing the
-#' hierarchical model
-#' @param parentSuffix A character scalar giving an additional suffix applied to
-#' all elements created in the hierarchical model specification. This argument
-#' is rarely set directly by the user but by the model definition functions
-#' (such as \code{\link{modelDefinitionToNIMBLE}}) when generating model code
-#'
-#' @return A list element with the following named elements:
-#' \describe{
-#'  \item{\code{name}}{A character scalar containing the name of the
-#'  hierarchical effect and is used as a name for intermediary variables}
-#'  \item{\code{code}}{A character scalar containing the NIMBLE code specifying
-#'  the hierarchical effect (and will be passed to
-#'  \code{\link[nimble]{nimbleCode}})}
-#'  \item{\code{constants}}{A list containing named elements corresponding to
-#'  the variables used as constants needed for the hierarchical effect in
-#'  \code{\link[nimble]{nimbleModel}}}
-#'  \item{\code{data}}{A list containing named elements corresponding to the
-#'  data nodes used for the hierarchical effect in
-#'  \code{\link[nimble]{nimbleModel}}}
-#'  \item{\code{inits}}{A named list of starting values for model variables used
-#'  in the hierarchical effect and passed to \code{\link[nimble]{nimbleModel}}}
-#'  \code{monitors}{The nodes of the hierarchical effect to
-#'  monitor in the MCMC and passed to \code{\link[nimble]{configureMCMC}}}
-#'  \code{monitors2}{The nodes of the hierarchical effect to
-#'  monitor in the supplemental chain monitor in the MCMC and passed to
-#'  \code{\link[nimble]{configureMCMC}}}
-#' }
-#'
-#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
-#' @seealso \code{\link[nimble]{nimbleCode}},
-#' \code{\link[nimble]{configureMCMC}}
-#' @export
-h <- function(var, ..., model, parentSuffix = "") {
-  ### 1.2.1 ---- Sanity check the model argument ----
-  inModel <- model
-  hOutput <- inModel
-  if(!is.list(inModel)) {
-    if(is.character(inModel)) {
-      if(length(inModel) <= 0) {
-        stop("error encountered processing hierarchical model component: model argument has length of zero")
-      } else if(length(inModel) > 1) {
-        warning("model argument has length greater than one: only the first element will be used")
-        inModel <- inModel[1]
-      }
-      if(is.na(inModel)) {
-        stop("error encountered processing hierarchical model component: model argument is NA")
-      }
-      if(!(inModel %in% names(hFamilies_raw))) {
-        stop("error encountered processing hierarchical model component: ", inModel, " is not a supported model type")
-      }
-      # Retrieve the model from the list of supported models
-      inModel <- hFamilies_raw[[inModel]]
-    } else {
-      # Input is a function so use it directly
-      inModel <- tryCatch(as.function(inModel), error = function(err) {
-        stop("error encountered processing hierarchical model component: ", err)
-      })
-    }
-    ### 1.2.2 ---- Sanity check the parent suffix argument ----
-    inParentSuffix <- tryCatch(as.character(parentSuffix), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    if(length(inParentSuffix) <= 0) {
-      inParentSuffix <- ""
-    } else if(length(inParentSuffix) > 1) {
-      warning("parent suffix argument has length greater than one: only the first element will be used")
-      inParentSuffix <- inParentSuffix[1]
-    }
-    if(is.na(inParentSuffix)) {
-      inParentSuffix <- ""
-    }
-    ### 1.2.3 ---- Run the hierarchical model specification ----
-    # Take the relevant parameters for the hierarchical specification function from the ellipsis arguments
-    modelArgs <- append(alist(var = var), processEllipsisArgs(inModel, ...))
-    if("suffix" %in% names(modelArgs)) {
-      # Append the parent suffix
-      modelArgs[["suffix"]] <- paste0(modelArgs[["suffix"]], inParentSuffix)
-    }
-    # Call the hierarchical model specification with the correct arguments
-    hOutput <- tryCatch(as.list(do.call(inModel, modelArgs)), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-  }
-  ### 1.2.4 ---- Ensure consistent output of the h function ----
-  modelOutput <- list(
-    # Initialise the name of effect to be the deparsed name of the 'var' argument
-    name = makeBUGSFriendlyNames(deparse(substitute(var)), NA, FALSE),
-    code = character(),
-    constants = list(),
-    data = list(),
-    inits = list(),
-    monitors = character(),
-    monitors2 = character()
-  )
-  if(!is.null(names(hOutput))) {
-    # Copy across those elements in the output of the hierarchical modelling function
-    # that are acceptable outputs
-    isInOutput <- names(hOutput) %in% names(modelOutput)
-    modelOutput[names(hOutput)[isInOutput]] <- hOutput[isInOutput]
-    ### 1.2.5 ---- Sanity test the model outputs ----
-    modelOutput$name <- tryCatch(makeBUGSFriendlyNames(as.character(modelOutput$name), warnType = "warning"), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    if(length(modelOutput$name) <= 0) {
-      stop("error encountered processing hierarchical model component: effect name has length zero")
-    } else if(length(modelOutput$name) > 1) {
-      warning("effect name argument has length greater than one: only the first element will be used")
-      modelOutput$name <- modelOutput$name[1]
-    }
-    if(is.na(modelOutput$name) || modelOutput$name == "") {
-      stop("error encountered processing hierarchical model component: effect name is NA")
-    }
-    if(is.language(modelOutput$code)) {
-      # If the output has code that has been generated from the nimbleCode
-      # function then process it so that it is a string
-      modelOutput$code <- as.character(modelOutput$code)
-      if(modelOutput$code[1] == "{") {
-        if(length(modelOutput$code) > 1) {
-          modelOutput$code <- modelOutput$code[2:length(modelOutput$code)]
-        } else {
-          modelOutput$code <- ""
-        }
-      }
-    }
-    modelOutput$code <- tryCatch(as.character(modelOutput$code), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    if(length(modelOutput$code) > 1) {
-      modelOutput$code <- paste(modelOutput$code, collapse = "\n")
-    }
-    modelOutput$constants <- tryCatch(as.list(modelOutput$constants), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    modelOutput$data <- tryCatch(as.list(modelOutput$data), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    modelOutput$inits <- tryCatch(as.list(modelOutput$inits), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    modelOutput$monitors <- tryCatch(as.character(modelOutput$monitors), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    modelOutput$monitors2 <- tryCatch(as.character(modelOutput$monitors2), error = function(err) {
-      stop("error encountered processing hierarchical model component: ", err)
-    })
-    # Retrieve any attributes and append extra information
-    outAttr <- attributes(modelOutput)
-    if(any(!isInOutput)) {
-      # Append any extra returned information to the attributes
-      outAttr <- append(outAttr, hOutput[!isInOutput])
-    }
-    attributes(modelOutput) <- outAttr
-  }
-  modelOutput
 }
