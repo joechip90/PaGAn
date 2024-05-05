@@ -54,7 +54,7 @@
 #' @export
 h <- function(..., model, parentSuffix = "", effName = NULL) {
   inSuffix <- ""
-  ### 1.2.1 ---- Sanity check the effect name argument ----
+  ### 1.1.1 ---- Sanity check the effect name argument ----
   inEffName <- tryCatch(as.character(effName), error = function(err) {
     warning("error encountered processing hierarchical effect name: using default values instead")
     character()
@@ -73,7 +73,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
       inEffName <- deparse(substitute(var, env = inArgs))
     }
   }
-  ### 1.2.1 ---- Sanity check the model argument ----
+  ### 1.1.2 ---- Sanity check the model argument ----
   inModel <- model
   hOutput <- inModel
   if(!is.list(inModel)) {
@@ -102,7 +102,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
         stop("error encountered processing hierarchical model component: ", err)
       })
     }
-    ### 1.2.2 ---- Sanity check the parent suffix argument ----
+    ### 1.1.3 ---- Sanity check the parent suffix argument ----
     inParentSuffix <- tryCatch(as.character(parentSuffix), error = function(err) {
       stop("error encountered processing hierarchical model component: ", err)
     })
@@ -115,7 +115,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     if(is.na(inParentSuffix)) {
       inParentSuffix <- ""
     }
-    ### 1.2.3 ---- Run the hierarchical model specification ----
+    ### 1.1.4 ---- Run the hierarchical model specification ----
     # Take the relevant parameters for the hierarchical specification function from the ellipsis arguments
     modelArgs <- append(alist(effName = inEffName, suffix = parentSuffix), processEllipsisArgs(inModel, ...))
     if("suffix" %in% names(modelArgs)) {
@@ -128,7 +128,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
       stop("error encountered processing hierarchical model component: ", err)
     })
   }
-  ### 1.2.4 ---- Ensure consistent output of the h function ----
+  ### 1.1.5 ---- Ensure consistent output of the h function ----
   # Some functions may not return all of these elements but they are included
   # with default values in this list to ensure that downstream processing functions
   # have a consistent object architecture
@@ -205,14 +205,23 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     }
     attributes(modelOutput) <- outAttr
   }
-  ### 1.1.5 ---- Check the arguments  ----
+  ### 1.1.6 ---- Check the arguments of the projection function ----
   if(!is.null(modelOutput$projFunc)) {
-    # Retrieve the names of the projection function
-    projFuncArgNames <- methods::formalArgs(modelOutput$projFunc)
+    # Retrieve from the ellipsis arguments any that match the name of the arguments of
+    # the projection function
+    projFuncInputs <- processEllipsisArgs(methods::formalArgs(modelOutput$projFunc), ...)
+    if(length(projFuncInpus) > 0) {
+      # Add the arguments that have been provided as ellipsis arguments to the list of constants
+      # (renaming them using the effect name and suffix convention to avoid name clashes in the
+      # BUGS code that is generated)
+      names(projFuncInputs) <- paste0(modelOutput$name, names(projFuncInputs), modelOutput$suffix)
+      modelOutput$constants <- append(modelOutput$constants, projFuncInputs)
+    }
   }
+  modelOutput
 }
 
-### 1.1 ==== Convert Hierarchical Effect to Z Matrix Specification ====
+### 1.2 ==== Convert Hierarchical Effect to Z Matrix Specification ====
 #' @title Specify a Hierarchical Effect in Terms of a Transformation Matrix
 #'
 #' @description Function that takes a hierarchical effect variable (as used as
@@ -235,9 +244,9 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link{h}}
 #' @export
-createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
+createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE, effName = NULL) {
   # Retrieve the name of the variable
-  effectName <- deparse(substitute(var))
+  effectName <- ifelse(is.null(effName), makeBUGSFriendlyNames(deparse(substitute(var)), NA, FALSE), effName)
   inVar <- var
   if(is.matrix(inVar) || is.data.frame(inVar)) {
     if(nrow(inVar) <= 0 || ncol(inVar) <= 0) {
@@ -279,6 +288,6 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
     attr(inVar, "scaleFactors") <- stats::setNames(rep(NA, length(inLevels)), inLevels)
   }
   # Add the name of the effect to the output as an attribute
-  attr(inVar, "effectName") <- makeBUGSFriendlyNames(effectName, NA, FALSE)
+  attr(inVar, "effectName") <- effectName
   inVar
 }
