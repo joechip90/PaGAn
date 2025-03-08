@@ -224,6 +224,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     }
     attributes(modelOutput) <- outAttr
   }
+<<<<<<< HEAD
   ### 1.1.7 ---- Set the arguments of the projection function  ----
   if(!is.null(modelOutput$projFunc)) {
     # Retrieve the names of the arguments of the projection function
@@ -245,12 +246,25 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
           paste0(modelOutput$name, "proj", projFuncArgNames, modelOutput$suffix)
         ))
       }
+=======
+  ### 1.1.6 ---- Check the arguments of the projection function ----
+  if(!is.null(modelOutput$projFunc)) {
+    # Retrieve from the ellipsis arguments any that match the name of the arguments of
+    # the projection function
+    projFuncInputs <- processEllipsisArgs(methods::formalArgs(modelOutput$projFunc), ...)
+    if(length(projFuncInpus) > 0) {
+      # Add the arguments that have been provided as ellipsis arguments to the list of constants
+      # (renaming them using the effect name and suffix convention to avoid name clashes in the
+      # BUGS code that is generated)
+      names(projFuncInputs) <- paste0(modelOutput$name, names(projFuncInputs), modelOutput$suffix)
+      modelOutput$constants <- append(modelOutput$constants, projFuncInputs)
+>>>>>>> 5f2e3692bedf9b60fb81dc8ee9f92a6ca61b18ba
     }
   }
   modelOutput
 }
 
-### 1.1 ==== Convert Hierarchical Effect to Z Matrix Specification ====
+### 1.2 ==== Convert Hierarchical Effect to Z Matrix Specification ====
 #' @title Specify a Hierarchical Effect in Terms of a Transformation Matrix
 #'
 #' @description Function that takes a hierarchical effect variable (as used as
@@ -275,9 +289,9 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
 #' @seealso \code{\link{h}}
 #' @export
-createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
+createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE, effName = NULL) {
   # Retrieve the name of the variable
-  effectName <- deparse(substitute(var))
+  effectName <- ifelse(is.null(effName), makeBUGSFriendlyNames(deparse(substitute(var)), NA, FALSE), effName)
   inVar <- var
   if(is.matrix(inVar) || is.data.frame(inVar)) {
     if(nrow(inVar) <= 0 || ncol(inVar) <= 0) {
@@ -319,6 +333,6 @@ createZMatrix <- function(var, centreCovs = FALSE, scaleCovs = FALSE) {
     attr(inVar, "scaleFactors") <- stats::setNames(rep(NA, length(inLevels)), inLevels)
   }
   # Add the name of the effect to the output as an attribute
-  attr(inVar, "effectName") <- makeBUGSFriendlyNames(effectName, NA, FALSE)
+  attr(inVar, "effectName") <- effectName
   inVar
 }
