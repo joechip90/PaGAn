@@ -9,8 +9,8 @@ if(file.exists(outputFile)) {
 ### ==== 1.1 Create an Argument List of Natively-supported Hierarchcial Models ====
 outputEnv$hFamilies_raw <- alist(
   iid = h.iid,
-  lasso = h.lasso,
-  plateau = h.plateau
+  ridge = h.ridge,
+  lasso = h.lasso
 )
 
 # Save the internal data objects

@@ -1631,6 +1631,18 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   ### 1.14.5 ---- Create the model matrix ----
   # Use the model inputs to create a model matrix
   modMatrix <- processModelFormula(inFormula = formula, inData = data, centreCovs = centreCovs, scaleCovs = scaleCovs)
+  # Number of data points
+  ndataInput <- 0
+  if(is.null(modMatrix$responseValues)) {
+    ndataInput <- nrow(modMatrix$modelMatrix)
+  } else if(is.null(dim(modMatrix$responseValues))) {
+    ndataInput <- length(modMatrix$responseValues)
+  } else {
+    ndataInput <- dim(modMatrix$responseValues)[1]
+  }
+  if(ndataInput <= 0) {
+    stop("invalid model matrix provided: number of rows in the data are zero")
+  }
   ### 1.14.6 ---- Produce the BUGS formulation ----
   # Initialise the NIMBLE arguments
   nimbleArgs <- list(
@@ -1640,7 +1652,10 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
     inits = list(),
     dimensions = list(),
     monitors = character(),
-    monitors2 = character()
+    monitors2 = character(),
+    initCode = list(),
+    exitCode = list(),
+    runTimeGlobal = list()
   )
   expNodeTextInput <- c()
   priorText <- c()
@@ -1713,7 +1728,7 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   }
   if(length(modMatrix$covNames) > 0) {
     # If there are fixed effects then add these to the NIMBLE specification
-    expNodeTextInput <- c(expNodeTextInput, paste0(modMatrix$covNames["nimbleName", ], inSuffix, "[1:ndata", inSuffix, "] * ", modMatrix$covNames["coefficientName", ], inSuffix))
+    expNodeTextInput <- c(expNodeTextInput, paste0(modMatrix$covNames["nimbleName", ], inSuffix, ifelse(ndataInput > 1, paste0("[1:ndata", inSuffix, "]"), ""),  " * ", modMatrix$covNames["coefficientName", ], inSuffix))
     nimbleArgs$monitors <- c(nimbleArgs$monitors, paste0(modMatrix$covNames["coefficientName", ], inSuffix))
     nimbleArgs$inits <- append(nimbleArgs$inits, stats::setNames(replicate(ncol(modMatrix$covNames), 0.0, simplify = FALSE), paste0(modMatrix$covNames["coefficientName", ], inSuffix)))
     nimbleArgs$constants <- append(nimbleArgs$constants, stats::setNames(as.list(modMatrix$covFrame), paste0(modMatrix$covNames["nimbleName", colnames(modMatrix$covFrame)], inSuffix)))
@@ -1725,7 +1740,7 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
   if(!is.null(modMatrix$offsetFrame)) {
     totalOffset <- apply(X = as.matrix(modMatrix$offsetFrame), FUN = sum, MARGIN = 1)
     nimbleArgs$constants <- append(nimbleArgs$constants, stats::setNames(list(totalOffset), paste0("totalOffset", inSuffix)))
-    expNodeTextInput <- c(expNodeTextInput, paste0("totalOffset", inSuffix, "[1:ndata", inSuffix, "]"))
+    expNodeTextInput <- c(expNodeTextInput, paste0("totalOffset", inSuffix, ifelse(ndataInput > 1, paste0("[1:ndata", inSuffix, "]"), "")))
   }
   # Include the hierarchical model terms if they are present
   hierAttributes <- NULL
@@ -1754,6 +1769,11 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
         stop("error encountered during processing of initialisation values in hierachical model specification: ", err)
       })
     })))
+    nimbleArgs$dimensions <- append(nimbleArgs$dimensions, unlist(lapply(X = hierList, FUN = function(curHier) {
+      tryCatch(as.list(curHier$dimensions), error = function(err) {
+        stop("error encountered during processing of dimensions extents in hierarchical model specification: ", err)
+      })
+    })))
     nimbleArgs$monitors <- c(nimbleArgs$monitors, unlist(lapply(X = hierList, FUN = function(curHier) {
       tryCatch(as.character(curHier$monitors), error = function(err) {
         stop("error encountered during processing of the node monitor names in hierarchical model specification: ", err)
@@ -1764,8 +1784,31 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
         stop("error encountered during processing of the node monitor names in hierarchical model specification: ", err)
       })
     })))
+    nimbleArgs$initCode <- append(nimbleArgs$initCode, unlist(lapply(X = hierList, FUN = function(curHier) {
+      outValue <- curHier
+      if(is.language(curHier$initCode)) {
+        outValue <- list(curHier$initCode)
+      } else if(!is.list(curHier$initCode)) {
+        stop("error encountered during processing of the initialisation code in hierarchical model specification: input is not a language object")
+      }
+      outValue
+    })))
+    nimbleArgs$exitCode <- append(nimbleArgs$initCode, unlist(lapply(X = hierList, FUN = function(curHier) {
+      outValue <- curHier
+      if(is.language(curHier$exitCode)) {
+        outValue <- list(curHier$exitCode)
+      } else if(!is.list(curHier$exitCode)) {
+        stop("error encountered during processing of the initialisation code in hierarchical model specification: input is not a language object")
+      }
+      outValue
+    })))
+    nimbleArgs$runTimeGlobal <- append(nimbleArgs$runTimeGlobal, unlist(lapply(X = hierList, FUN = function(curHier) {
+      tryCatch(as.list(curHier$runTimeGlobal), error = function(err) {
+        stop("error encountered during processing of runtime global variables in hierachical model specification: ", err)
+      })
+    })))
     # Retrieve the names of the hierarchical effects
-    hEffectNames <- sapply(X = hierList, FUN = function(curHier) {
+    hEffectNames <- t(sapply(X = hierList, FUN = function(curHier) {
       outText <- tryCatch(as.character(curHier$name), error = function(err) {
         stop("error encountered during processing of the hierarchical component name in the hierarchical model specification: ", err)
       })
@@ -1778,14 +1821,61 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
       if(is.na(outText) || outText == "") {
         stop("error encountered during processing of the hierarchical component name in the hierarchical model specification: name is NA")
       }
-      makeBUGSFriendlyNames(outText, warnType = "warning")
-    })
+      outSuffix <- tryCatch(as.character(curHier$suffix), error = function(err) {
+        stop("error encountered during processing of the hierarchical component suffix in the hierarchical model specification: ", err)
+      })
+      if(length(outSuffix) <= 0) {
+        outSuffix <- ""
+      } else if(length(outSuffix) > 1) {
+        warning("suffix vector has length greater than one: only the first element will be used")
+        outSuffix <- outSuffix[1]
+      }
+      if(is.na(outSuffix)) {
+        outSuffix <- ""
+      }
+      c(outText, outSuffix)
+    }, simplify = "array"))
+    # Update the linear predictor text
+    expNodeTextInput <- c(expNodeTextInput, sapply(X = 1:length(hierList), FUN = function(curIter, hierList, hEffectNames, ndataInput, inSuffix) {
+      # Lookup up the current hierarchical effect and names with the index
+      curHier <- hierList[[curIter]]
+      curNames <- hEffectNames[curIter, ]
+      outText <- ""
+      if(is.null(curHier$projFunc)) {
+        # If there is no projection function then use the random effect directly
+        outText <- paste0(curNames[1], curNames[2], ifelse(ndataInput > 1, paste0("[1:ndata", inSuffix, "]"), ""))
+      } else {
+        # Retrieve the full list of projection function arguments
+        projFuncArguments <- methods::formalArgs(curHier$projFunc)
+        if(length(projFuncArguments) > 1) {
+          projFuncArguments <- projFuncArguments[2:length(projFuncArguments)]
+        } else {
+          projFuncArguments <- character()
+        }
+        outText <- paste0(curNames[1], "proj", curNames[2], "(", curNames[1], curNames[2],
+          ifelse(paste0(curNames[1], "effN", curNames[2]) %in% curHier$constants,
+            paste0("[1:", curNames[1], "effN", curNames[2], "]"),
+            ""
+          ),
+          ifelse(length(projFuncArguments) > 0,
+            paste0(", ", projFuncArguments, " = ", curNames[1], "proj", projFuncArguments, curNames[2], collapse = ""),
+            ""
+          ),
+        ")")
+      }
+      outText
+    }, hierList = hierList, hEffectNames = hEffectNames, ndataInput = ndataInput, inSuffix = inSuffix, simplify = "array"))
+    # Get a list of projection functions that are used in the model
+    projFuncs <- stats::setNames(lapply(X = hierList, FUN = function(curHier) { curHier$projFunc }), paste0(hEffectNames[, 1], "proj", hEffectNames[, 2]))
+    projFuncs <- projFuncs[sapply(X = hierList, FUN = function(curHier) { !is.null(curHier$projFunc) })]
+    if(length(projFuncs) > 0) {
+      # Add the projection functions to the list of run-time global variables (so that NIMBLE can use them)
+      nimbleArgs$runTimeGlobal <- append(nimbleArgs$runTimeGlobal, projFuncs)
+    }
     # Add any attributes set by the hierarchical terms
     hierAttributes <- stats::setNames(lapply(X = hierList, FUN = function(curHier) {
       attributes(curHier)
-    }), hEffectNames)
-    # Update the linear predictor text
-    expNodeTextInput <- c(expNodeTextInput, paste0(hEffectNames, inSuffix, "[1:ndata", inSuffix, "]"))
+    }), paste0(hEffectNames[, 1], hEffectNames[, 2]))
   }
   if(length(modMatrix$smoothFunctions) > 0) {
     ### 1.14.8 ---- Add mgcv smooth terms ----
@@ -1793,7 +1883,8 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
     stop("support for mgcv smooth functions in model formulae has not yet been implemented")
   }
   if(length(modMatrix$fFunctions) > 0) {
-    stop("support for INLA functions is done through the 'nimbla' function")
+    # Not yet supported
+    stop("support for INLA functions has not yet been implemented")
   }
   ### 1.14.9 ---- Add the code for the linear predictor ----
   finalResponseName <- ifelse(is.na(modMatrix$responseName), "response", modMatrix$responseName)
@@ -1803,11 +1894,13 @@ modelDefinitionToNIMBLE <- function(formula, data, family = "gaussian", link = "
     paste("# Set the prior distribution for the arguments used in the likelihood calculation for", finalResponseName),
     priorText,
     paste("# Calculate the linear predictor for", finalResponseName),
-    curLink$nimbleImp(paste0(finalResponseName, "Pred", inSuffix, "[1:ndata", inSuffix, "]"), paste(expNodeTextInput, collapse = " + "))
+    curLink$nimbleImp(paste0(finalResponseName, "Pred", inSuffix, ifelse(ndataInput > 1, paste0("[1:ndata", inSuffix, "]"), "")), paste(expNodeTextInput, collapse = " + "))
   ), collapse = "\n")
   # Add the constant containing the number of data points
-  ndataInput <- nrow(modMatrix$modelMatrix)
-  nimbleArgs$constants <- c(nimbleArgs$constants, stats::setNames(list(ndataInput), paste0("ndata", inSuffix)))
+  # ndataInput <- nrow(modMatrix$modelMatrix)
+  if(ndataInput > 1) {
+    nimbleArgs$constants <- c(nimbleArgs$constants, stats::setNames(list(ndataInput), paste0("ndata", inSuffix)))
+  }
   # Add a monitor for the prediction node
   nimbleArgs$monitors2 <- c(nimbleArgs$monitors2, paste0(finalResponseName, "Pred", inSuffix))
   ### 1.14.10 --- Add the code for the error distribution ----

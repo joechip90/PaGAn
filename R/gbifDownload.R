@@ -200,17 +200,17 @@ processDatasetTitle <- function(inTitles, targetWidth) {
 #' @seealso \code{\link[rgbif]{name_lookup}}
 #' @export
 taxonLookup <- function(
-  kingdom = NULL,
-  phylum = NULL,
-  class = NULL,
-  order = NULL,
-  family = NULL,
-  genus = NULL,
-  species = NULL,
-  other = NULL,
-  limit = NULL,
-  rank = NULL,
-  ...
+    kingdom = NULL,
+    phylum = NULL,
+    class = NULL,
+    order = NULL,
+    family = NULL,
+    genus = NULL,
+    species = NULL,
+    other = NULL,
+    limit = NULL,
+    rank = NULL,
+    ...
 ) {
   # Set the hard limit set by the GBIF API
   gbifLimit <- 99999
@@ -280,7 +280,7 @@ taxonLookup <- function(
       stop("invalid entry for the start argument: value is NA or less than zero")
     }
   }
-  do.call(rbind, lapply(X = taxaSpec[[qryLvl]], FUN = function(curQueryVal, taxaSpec, qryLvl, extraArgs, rankInfo, inLimit, gbifLimit, startIndex) {
+  outList <- lapply(X = taxaSpec[[qryLvl]], FUN = function(curQueryVal, taxaSpec, qryLvl, extraArgs, rankInfo, inLimit, gbifLimit, startIndex) {
     # Retrieve the rank of the current query
     curRank <- qryLvl
     if(curRank == "other") {
@@ -319,7 +319,22 @@ taxonLookup <- function(
       }, taxaSpec = taxaSpec, outFrame = outFrame), MARGIN = 1, FUN = all)
     }
     outFrame[rowsToUse, ]
-  }, taxaSpec = taxaSpec, qryLvl = qryLvl, extraArgs = extraArgs, rankInfo = rankInfo, inLimit = inLimit, gbifLimit = gbifLimit, startIndex = startIndex))
+  }, taxaSpec = taxaSpec, qryLvl = qryLvl, extraArgs = extraArgs, rankInfo = rankInfo, inLimit = inLimit, gbifLimit = gbifLimit, startIndex = startIndex)
+  # Helper function to bind table when columns differ (occasionally happens due to weird ways the taxon lookup happens)
+  rbindPad <- function(inList) {
+    allColNames <- unique(unlist(lapply(X = inList, FUN = colnames)))
+    outList <- lapply(X = inList, FUN = function(curFrame, allColNames) {
+      outFrame <- as.data.frame(curFrame)
+      isInFrame <- allColNames %in% colnames(outFrame)
+      if(!all(isInFrame)) {
+        missingCols <- allColNames[!isInFrame]
+        outFrame <- cbind(outFrame, as.data.frame(setNames(replicate(length(missingCols), rep(NA, nrow(outFrame)), simplify = FALSE), missingCols)))
+      }
+      outFrame[, allColNames]
+    }, allColNames = allColNames)
+    do.call(rbind, outList)
+  }
+  rbindPad(outList)
 }
 
 ### 1.3 ==== Function to Produce a JSON Query for GBIF's API ====
@@ -516,9 +531,10 @@ jsonOccFormulation <- function(
     taxonFrame <- do.call(taxonLookup, predArgs[c(taxonLookupArgs, nameLookupArgs)[c(taxonLookupArgs, nameLookupArgs) %in% names(predArgs)]])
     # Remove the taxon-lookup related arguments from the processing list and also
     # add a search for the taxa found in the lookup table
+    taxonLookupIDs <- unique(taxonFrame[, ifelse(is.na(lookupLevel), "key", paste0(lookupLevel, "Key"))])
     predArgs <- append(
       predArgs[!(names(predArgs) %in% c(taxonLookupArgs, nameLookupArgs))],
-      stats::setNames(list(unique(taxonFrame[, ifelse(is.na(lookupLevel), "key", paste0(lookupLevel, "Key"))])), paste(ifelse(is.na(lookupLevel), "TAXON", toupper(lookupLevel)), "KEY", sep = "_"))
+      stats::setNames(list(taxonLookupIDs[!is.na(taxonLookupIDs)]), paste(ifelse(is.na(lookupLevel), "TAXON", toupper(lookupLevel)), "KEY", sep = "_"))
     )
   } else if(any(names(predArgs) %in% nameLookupArgs)) {
     # Remove those arguments that are only arguments to the names lookup function of rgbif
@@ -836,11 +852,11 @@ jsonOccFormulation <- function(
       ), collapse = "\n")
     }
     outQueryText <- paste("{",
-      paste0("\t\"creator\":\"", check_gbifUser(user), "\","),
-      paste0("\t\"notification_address\":[\"", check_gbifEmail(email), "\"],"),
-      paste0("\t\"sendNotification\": ", tolower(as.character(inSendNotification)), ","),
-      predText,
-    "}\n", sep = "\n")
+                          paste0("\t\"creator\":\"", check_gbifUser(user), "\","),
+                          paste0("\t\"notification_address\":[\"", check_gbifEmail(email), "\"],"),
+                          paste0("\t\"sendNotification\": ", tolower(as.character(inSendNotification)), ","),
+                          predText,
+                          "}\n", sep = "\n")
     outQueryText <- jsonlite::prettify(outQueryText, indent = 1)
   }
   # If a taxon lookup has been performed then add an attribute that returns the
@@ -956,10 +972,14 @@ gbifOccDownload <- function(user, pwd, email, curlopts = list(), body = NULL, pi
     }
     # Cancel a download if it is still being prepared/run
     if(rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "RUNNING" ||
-      rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "PREPARING") {
+       rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "PREPARING") {
       rgbif::occ_download_cancel(downloadID, user = check_gbifUser(user), pwd = check_gbifUser(pwd), curlopts = curlopts)
     }
   })
+  # Wait a minimum of 20 seconds before starting to query the download status.  For large download requests
+  # immediate querying of the download can result in "RemoteException: File does not exist" errors from
+  # GBIF's servers
+  Sys.sleep(max(20, inPingTime))
   message("GBIF download being prepared...")
   while(rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "RUNNING" ||
         rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "PREPARING") {
@@ -968,8 +988,8 @@ gbifOccDownload <- function(user, pwd, email, curlopts = list(), body = NULL, pi
   if(rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "FAILED") {
     stop("error encountered processing the download request at the GBIF servers")
   } else if(rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "KILLED" ||
-    rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "CANCELLED" ||
-    rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "FILE_ERASED") {
+            rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "CANCELLED" ||
+            rgbif::occ_download_meta(downloadID, curlopts = curlopts)$status == "FILE_ERASED") {
     stop("download request killed or cancelled (or file is no longer stored see https://www.gbif.org/faq?question=for-how-long-will-does-gbif-store-downloads)")
   }
   if(dir.exists(occDataDir)) {
@@ -993,7 +1013,7 @@ gbifOccDownload <- function(user, pwd, email, curlopts = list(), body = NULL, pi
   attr(occDataRaw, "DOI") <- attr(downloadID, "doi")
   attr(occDataRaw, "citation") <- attr(downloadID, "citation")
   message("Download fully processed. Please cite this dataset download using the following style in any publications resulting from this analysis:\n",
-    attr(occDataRaw, "citation"), ".\nSee the GBIF citation guidelines for more information: https://www.gbif.org/citation-guidelines")
+          paste(attr(occDataRaw, "citation"), collapse = "\n"), ".\nSee the GBIF citation guidelines for more information: https://www.gbif.org/citation-guidelines")
   attr(occDataRaw, "query") <- inQuery
   # Function to retrieve extra information on the constituent datasets in the download
   retrieveDatasetInfo <- function(downloadID, curlopts) {

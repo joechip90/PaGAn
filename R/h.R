@@ -1,7 +1,7 @@
 ### 1.1 ==== Define a Hierarchical Component in a Linear Model ====
 #' @title Define a Hierarchical Component in a Linear Model
 #'
-#' @description Function to specify a hierarchical component with a Bayesian
+#' @description Function to specify a hierarchical component within a Bayesian
 #' model specification
 #'
 #' @param ... Named arguments to be passed to the hierarchical model
@@ -54,7 +54,7 @@
 #' @export
 h <- function(..., model, parentSuffix = "", effName = NULL) {
   inSuffix <- ""
-  ### 1.2.1 ---- Sanity check the effect name argument ----
+  ### 1.1.1 ---- Sanity check the effect name argument ----
   inEffName <- tryCatch(as.character(effName), error = function(err) {
     warning("error encountered processing hierarchical effect name: using default values instead")
     character()
@@ -64,16 +64,16 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     inEffName <- inEffName[1]
   }
   inEffName <- inEffName[!is.na(inEffName)]
+  inArgs <- eval(substitute(alist(...)))
   if(length(inEffName) <= 0) {
     # If an effect name hasn't been specified then look in the ellipsis arguments and see if there
     # is a 'var' variables being passed to the variable arguments - if so deparse the variable name
     # and use that for the effect name
-    inArgs <- eval(substitute(alist(...)))
     if("var" %in% names(inArgs)) {
       inEffName <- deparse(substitute(var, env = inArgs))
     }
   }
-  ### 1.2.1 ---- Sanity check the model argument ----
+  ### 1.1.2 ---- Sanity check the model argument ----
   inModel <- model
   hOutput <- inModel
   if(!is.list(inModel)) {
@@ -102,7 +102,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
         stop("error encountered processing hierarchical model component: ", err)
       })
     }
-    ### 1.2.2 ---- Sanity check the parent suffix argument ----
+    ### 1.1.3 ---- Sanity check the parent suffix argument ----
     inParentSuffix <- tryCatch(as.character(parentSuffix), error = function(err) {
       stop("error encountered processing hierarchical model component: ", err)
     })
@@ -115,12 +115,12 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     if(is.na(inParentSuffix)) {
       inParentSuffix <- ""
     }
-    ### 1.2.3 ---- Run the hierarchical model specification ----
+    ### 1.1.4 ---- Run the hierarchical model specification ----
     # Take the relevant parameters for the hierarchical specification function from the ellipsis arguments
     modelArgs <- append(alist(effName = inEffName, suffix = parentSuffix), processEllipsisArgs(inModel, ...))
     if("suffix" %in% names(modelArgs)) {
       # Append the parent suffix
-      modelArgs[["suffix"]] <- paste0(modelArgs[["suffix"]], inParentSuffix)
+      modelArgs[["suffix"]] <- processSuffix(paste0(modelArgs[["suffix"]], inParentSuffix))
       inSuffix <- modelArgs[["suffix"]]
     }
     # Call the hierarchical model specification with the correct arguments
@@ -128,7 +128,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
       stop("error encountered processing hierarchical model component: ", err)
     })
   }
-  ### 1.2.4 ---- Ensure consistent output of the h function ----
+  ### 1.1.5 ---- Ensure consistent output of the h function ----
   # Some functions may not return all of these elements but they are included
   # with default values in this list to ensure that downstream processing functions
   # have a consistent object architecture
@@ -139,6 +139,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     constants = list(),
     data = list(),
     inits = list(),
+    dimensions = list(),
     monitors = character(),
     monitors2 = character(),
     initCode = list(),
@@ -151,7 +152,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     # that are acceptable outputs
     isInOutput <- names(hOutput) %in% names(modelOutput)
     modelOutput[names(hOutput)[isInOutput]] <- hOutput[isInOutput]
-    ### 1.2.5 ---- Sanity test the model outputs ----
+    ### 1.1.6 ---- Sanity test the model outputs ----
     modelOutput$name <- tryCatch(makeBUGSFriendlyNames(as.character(modelOutput$name), warnType = "warning"), error = function(err) {
       stop("error encountered processing hierarchical model component: ", err)
     })
@@ -170,10 +171,12 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
       modelOutput$code <- as.character(modelOutput$code)
       if(modelOutput$code[1] == "{") {
         if(length(modelOutput$code) > 1) {
-          modelOutput$code <- modelOutput$code[2:length(modelOutput$code)]
+          modelOutput$code <- paste(modelOutput$code[2:length(modelOutput$code)], collapse = "\n")
         } else {
           modelOutput$code <- ""
         }
+      } else {
+        stop("error encountered processing hierarchical model code: code must be encapusulated with braces")
       }
     }
     modelOutput$code <- tryCatch(as.character(modelOutput$code), error = function(err) {
@@ -191,11 +194,27 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     modelOutput$inits <- tryCatch(as.list(modelOutput$inits), error = function(err) {
       stop("error encountered processing hierarchical model component: ", err)
     })
+    modelOutput$dimensions <- tryCatch(as.list(modelOutput$dimensions), error = function(err) {
+      stop("error encountered processing hierarchical model component: ", err)
+    })
     modelOutput$monitors <- tryCatch(as.character(modelOutput$monitors), error = function(err) {
       stop("error encountered processing hierarchical model component: ", err)
     })
     modelOutput$monitors2 <- tryCatch(as.character(modelOutput$monitors2), error = function(err) {
       stop("error encountered processing hierarchical model component: ", err)
+    })
+    if(is.language(modelOutput$initCode)) {
+      modelOutput$initCode <- list(modelOutput$initCode)
+    } else if(!is.list(modelOutput$initCode)) {
+      stop("error encountered during processing of the initialisation code in hierarchical model specification: input is not a language object")
+    }
+    if(is.language(modelOutput$exitCode)) {
+      modelOutput$exitCode <- list(modelOutput$exitCode)
+    } else if(!is.list(modelOutput$exitCode)) {
+      stop("error encountered during processing of the initialisation code in hierarchical model specification: input is not a language object")
+    }
+    modelOutput$runTimeGlobal <- tryCatch(as.list(modelOutput$runTimeGlobal), error = function(err) {
+      stop("error encountered during processing of runtime global variables in hierachical model specification: ", err)
     })
     # Retrieve any attributes and append extra information
     outAttr <- attributes(modelOutput)
@@ -205,11 +224,30 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     }
     attributes(modelOutput) <- outAttr
   }
-  ### 1.1.5 ---- Check the arguments  ----
+  ### 1.1.7 ---- Set the arguments of the projection function  ----
   if(!is.null(modelOutput$projFunc)) {
-    # Retrieve the names of the projection function
+    # Retrieve the names of the arguments of the projection function
     projFuncArgNames <- methods::formalArgs(modelOutput$projFunc)
+    if(length(projFuncArgNames) <= 0) {
+      stop("projection function must have at least one argument")
+    } else if(length(projFuncArgNames) > 1) {
+      # Look to see whether the projection function arguments already exist in the list of constants
+      projFuncArgNames <- projFuncArgNames[2:length(projFuncArgNames)]
+      projFuncArgNames <- projFuncArgNames[!(paste0(modelOutput$name, "proj", projFuncArgNames, modelOutput$suffix) %in% names(modelOutput$constants))]
+      # If the projection function requires arguments than add them to the list of constants and take them from the ellipsis arguments
+      if(length(projFuncArgNames) > 0) {
+        modelOutput$constants <- append(modelOutput$constants, stats::setNames(lapply(X = projFuncArgNames, FUN = function(curArgName, inArgs) {
+          if(!(curArgName %in% names(inArgs))) {
+            stop("argument \"", curArgName, "\" for projection function not found in the model specification argument list")
+          }
+          eval(inArgs[[curArgName]])
+        }, inArgs = inArgs),
+          paste0(modelOutput$name, "proj", projFuncArgNames, modelOutput$suffix)
+        ))
+      }
+    }
   }
+  modelOutput
 }
 
 ### 1.1 ==== Convert Hierarchical Effect to Z Matrix Specification ====
@@ -219,7 +257,9 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
 #' a variable in the \code{\link{h}} function) and creates a transformation
 #' matrix that links a vector of random effects to the data
 #'
-#' @param var The variable around which the hierarchical effect will be defined
+#' @param var The variable around which the hierarchical effect will be defined.
+#' This can be a \code{data.frame}, \code{matrix}, or a vector containing the
+#' different levels to deine the effect over.
 #' @param centreCovs A logical scalar denoting whether the fixed effects in the
 #' model should be centred before the analysis: each covariate element is
 #' subtracted by its mean. \code{centreCovs} can also be a function with one

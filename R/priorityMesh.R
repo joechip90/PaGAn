@@ -14,10 +14,10 @@
 #' @param ... Parameters to be passed to the
 #' \code{\link[fmesher]{fm_mesh_2d_inla}} mesh creation function
 #' @param funcApply A function to apply to the \code{covars} object before the
-#' priority analysis is performed.  A calue of \code{NULL} mean that no function
-#' will be applied to the covariate information. The default option is that the
-#' slope of the covariates will be calculated through the application of the
-#' \code{\link[terra]{terrain}} function.
+#' priority analysis is performed.  A value of \code{NULL} means that no
+#' function will be applied to the covariate information. The default option is
+#' that the slope of the covariates will be calculated through the application
+#' of the \code{\link[terra]{terrain}} function.
 #' @param filename An optional character scalar giving the location to store the
 #' calculated intensity raster object. If this value is NULL (the default) then
 #' the raster is not stored in a file.
