@@ -8,12 +8,38 @@
 #' @export
 NULL
 
+#' @title  Initialise package components on start up
+#' @description Register custom NIMBLE distributions
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @noRd
+.onLoad <- function(libname, pkgname) {
+  # Retrieve list of custom distributions that are defined in PaGAn and check
+  # for name clashes with any currently registered distributions
+  clashDists <- names(nimbleDists)[sapply(X = names(nimbleDists), FUN = nimble::isUserDefined)]
+  if(length(clashDists) > 0) {
+    warning("the following custom NIMBLE distributions are already defined and will be deregistered: ", paste(clashDists, collapse = ", "))
+    nimble::deregisterDistributions(clashDists)
+  }
+  # Register the NIMBLE distributions used in PaGAn
+  nimble::registerDistributions(nimbleDists, verbose = FALSE)
+  invisible()
+}
+
+#' @title  Remove package components on exit
+#' @description Deregister custom NIMBLE distributions
+#' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}
+#' @noRd
+.onUnload <- function(libname, pkgname) {
+  nimble::deregisterDistributions(names(nimbleDists))
+  invisible()
+}
+
 #' @title Retrieve relevant ellipsis argument
 #'
 #' @description Utility function to retrieve relevant ellipsis arguments (for
 #' use in plotting functions).
 #'
-#' @param prefix A character scalar containig the prefix that denotes relevant
+#' @param prefix A character scalar containing the prefix that denotes relevant
 #' arguments.
 #' @param ... A set of named arguments passed to the function.
 #' @param defaultArgs A list of named elements containing the default values

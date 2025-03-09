@@ -328,7 +328,7 @@ taxonLookup <- function(
       isInFrame <- allColNames %in% colnames(outFrame)
       if(!all(isInFrame)) {
         missingCols <- allColNames[!isInFrame]
-        outFrame <- cbind(outFrame, as.data.frame(setNames(replicate(length(missingCols), rep(NA, nrow(outFrame)), simplify = FALSE), missingCols)))
+        outFrame <- cbind(outFrame, as.data.frame(stats::setNames(replicate(length(missingCols), rep(NA, nrow(outFrame)), simplify = FALSE), missingCols)))
       }
       outFrame[, allColNames]
     }, allColNames = allColNames)

@@ -42,9 +42,9 @@
 #'  \code{\link[nimble]{nimbleModel}}}
 #'  \item{\code{inits}}{A named list of starting values for model variables used
 #'  in the hierarchical effect and passed to \code{\link[nimble]{nimbleModel}}}
-#'  \code{monitors}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors}}{The nodes of the hierarchical effect to
 #'  monitor in the MCMC and passed to \code{\link[nimble]{configureMCMC}}}
-#'  \code{monitors2}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors2}}{The nodes of the hierarchical effect to
 #'  monitor in the supplemental chain monitor in the MCMC and passed to
 #'  \code{\link[nimble]{configureMCMC}}}
 #'  \item{\code{initCode}}{A list of language objects to run upon initialisation
@@ -119,14 +119,14 @@ h.iid <- function(var, effName = NULL, centreCovs = FALSE, scaleCovs = FALSE, su
   # Create a couple of model specifications to be used depending on the dimensionality
   # of the effect coefficients
   coeffVecCode <- paste(
-    paste0("# Define the ", modelOutput$name, " random effect"),
+    paste0("# Define the ", modelOutput$name, modelOutput$suffix, " random effect"),
     paste0(modelOutput$name, "effPrec", modelOutput$suffix, " ~ ", iniidPrecPrior),
     paste0("for(", modelOutput$name, "effIter", modelOutput$suffix, " in 1:", modelOutput$name, "effN", modelOutput$suffix, ") {"),
     paste0("\t", modelOutput$name, modelOutput$suffix, "[", modelOutput$name, "effIter", modelOutput$suffix, "] ~ dnorm(0.0, ", modelOutput$name, "effPrec", modelOutput$suffix, ")"),
     "}",
   sep = "\n")
   coeffScalarCode <- paste(
-    paste0("# Define the ", modelOutput$name, " random effect"),
+    paste0("# Define the ", modelOutput$name, modelOutput$suffix, " random effect"),
     paste0(modelOutput$name, "effPrec", modelOutput$suffix, " ~ ", iniidPrecPrior),
     paste0(modelOutput$name, modelOutput$suffix, " ~ dnorm(0.0, ", modelOutput$name, "effPrec", modelOutput$suffix, ")"),
   sep = "\n")
@@ -263,9 +263,9 @@ h.iid <- function(var, effName = NULL, centreCovs = FALSE, scaleCovs = FALSE, su
 #'  \code{\link[nimble]{nimbleModel}}}
 #'  \item{\code{inits}}{A named list of starting values for model variables used
 #'  in the hierarchical effect and passed to \code{\link[nimble]{nimbleModel}}}
-#'  \code{monitors}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors}}{The nodes of the hierarchical effect to
 #'  monitor in the MCMC and passed to \code{\link[nimble]{configureMCMC}}}
-#'  \code{monitors2}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors2}}{The nodes of the hierarchical effect to
 #'  monitor in the supplemental chain monitor in the MCMC and passed to
 #'  \code{\link[nimble]{configureMCMC}}}
 #'  \item{\code{initCode}}{A list of language objects to run upon initialisation
@@ -314,9 +314,9 @@ h.ridge <- function(var, effName = NULL, centreCovs = TRUE, scaleCovs = TRUE, su
 #'  \code{\link[nimble]{nimbleModel}}}
 #'  \item{\code{inits}}{A named list of starting values for model variables used
 #'  in the hierarchical effect and passed to \code{\link[nimble]{nimbleModel}}}
-#'  \code{monitors}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors}}{The nodes of the hierarchical effect to
 #'  monitor in the MCMC and passed to \code{\link[nimble]{configureMCMC}}}
-#'  \code{monitors2}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors2}}{The nodes of the hierarchical effect to
 #'  monitor in the supplemental chain monitor in the MCMC and passed to
 #'  \code{\link[nimble]{configureMCMC}}}
 #'  \item{\code{initCode}}{A list of language objects to run upon initialisation
@@ -337,12 +337,27 @@ h.ridge <- function(var, effName = NULL, centreCovs = TRUE, scaleCovs = TRUE, su
 #' \code{\link{h}}
 #' @export
 h.lasso <- function(var, effName = NULL, centreCovs = TRUE, scaleCovs = TRUE, suffix = "", iidPrecPrior = "dgamma(0.001, 0.001)") {
+  ### 1.3.1 ---- Call the iid random effects first ----
   modelOutput <- h.iid(var, effName, centreCovs, scaleCovs, suffix, iidPrecPrior)
+  ### 1.3.2 ---- Sanity check the iid prior argument ----
+  iniidPrecPrior <- tryCatch(as.character(iidPrecPrior), error = function(err) {
+    warning("error encountered processing prior for the standard deviation of the ", effName, " random effect: using default values instead")
+    formals(h.iid)[["iidPrecPrior"]]
+  })
+  if(length(iniidPrecPrior) > 1) {
+    warning("standard deviation prior specification argument has length greater than one: only the first element will be used")
+    iniidPrecPrior <- iniidPrecPrior[1]
+  }
+  iniidPrecPrior <- iniidPrecPrior[!is.na(iniidPrecPRior)]
+  if(length(iniidPrecPRior) <= 0) {
+    iniidPrecPRior <- formals(h.iid)[["iidPrecPrior"]]
+  }
+  ### 1.3.3 ---- Update the iid code with LASSO code ----
   laplaceScaleCode <- paste0(modelOutput$name, "effRate", modelOutput$suffix, " <- 1.0 / sqrt(0.5 / ", modelOutput$name, "effPrec", modelOutput$suffix, ")")
   if(paste0(modelOutput$name, "effN", modelOutput$suffix) %in% names(modelOutput$constants)) {
     # The effect has more than one covariate (after expansion) - replace IID code with LASSO prior specification for multiple covariates
     modelOutput$code <- paste(
-      paste0("# Define the ", modelOutput$name, " random effect"),
+      paste0("# Define the ", modelOutput$name, modelOutput$suffix, " random effect"),
       paste0(modelOutput$name, "effPrec", modelOutput$suffix, " ~ ", iniidPrecPrior),
       laplaceScaleCode,
       paste0("for(", modelOutput$name, "effIter", modelOutput$suffix, " in 1:", modelOutput$name, "effN", modelOutput$suffix, ") {"),
@@ -354,7 +369,7 @@ h.lasso <- function(var, effName = NULL, centreCovs = TRUE, scaleCovs = TRUE, su
     # (this is a weird thing for a user to request to do - could put in a warning message but this might be annoying for certain
     # edge-case users)
     modelOutput$code <- paste(
-      paste0("# Define the ", modelOutput$name, " random effect"),
+      paste0("# Define the ", modelOutput$name, modelOutput$suffix, " random effect"),
       paste0(modelOutput$name, "effPrec", modelOutput$suffix, " ~ ", iniidPrecPrior),
       laplaceScaleCode,
       paste0(modelOutput$name, modelOutput$suffix, " ~ ddexp(0.0, ", modelOutput$name, "effRate", modelOutput$suffix, ")"),

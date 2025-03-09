@@ -4,7 +4,13 @@
 \alias{mcmcNIMBLERun}
 \title{Run NIMBLE using the specified arguments}
 \usage{
-mcmcNIMBLERun(..., mcCores = 1, runTimeGlobal = list(), initCode = list())
+mcmcNIMBLERun(
+  ...,
+  mcCores = 1,
+  runTimeGlobal = list(),
+  initCode = list(),
+  exitCode = list()
+)
 }
 \arguments{
 \item{...}{Named arguments to be passed to the constituent NIMBLE functions
@@ -26,6 +32,9 @@ of NIMBLE at run time}
 
 \item{initCode}{Either a language object or a list of language objects
 containing code to run at the beginning of each NIMBLE instance}
+
+\item{exitCode}{Either a language object of a list of language objects
+containing code to run on completion of each NIMBLE instance}
 }
 \value{
 A list containing the following named elements:

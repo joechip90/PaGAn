@@ -30,10 +30,10 @@ list of parameters appended to the \code{loc} argument before running the
 \code{\link[fmesher]{fm_mesh_2d_inla}} mesh creation function}
 
 \item{funcApply}{A function to apply to the \code{covars} object before the
-priority analysis is performed.  A calue of \code{NULL} mean that no function
-will be applied to the covariate information. The default option is that the
-slope of the covariates will be calculated through the application of the
-\code{\link[terra]{terrain}} function.}
+priority analysis is performed.  A value of \code{NULL} means that no
+function will be applied to the covariate information. The default option is
+that the slope of the covariates will be calculated through the application
+of the \code{\link[terra]{terrain}} function.}
 
 \item{filename}{An optional character scalar giving the location to store the
 calculated intensity raster object. If this value is NULL (the default) then

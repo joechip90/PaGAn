@@ -10,7 +10,23 @@ if(file.exists(outputFile)) {
 outputEnv$hFamilies_raw <- alist(
   iid = h.iid,
   ridge = h.ridge,
-  lasso = h.lasso
+  lasso = h.lasso,
+  plateau = h.plateau
+)
+
+### ==== 1.2 Create a List of Custom-Defined NIMBLE Distributions ====
+outputEnv$nimbleDists <- list(
+  # Distribution for the plateau coefficient magnitude parameters
+  dplateaumags = list(
+    BUGSdist = "dplateaumags(prec, rho)",
+    discrete = FALSE,
+    pqAvail = FALSE,
+    types = c(
+      'value = double(1)',
+      'prec = double(0)',
+      'rho = double(0)'
+    )
+  )
 )
 
 # Save the internal data objects

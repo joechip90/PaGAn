@@ -1,0 +1,72 @@
+---
+title: "Plateau Hierarchical Effects"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Plateau Hierarchical Effects}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The PaGAn package supports the implementation of a variation of the plateau
+relationships outlined in [Brewer *et al.* (2016)](https://doi.org/10.1111/2041-210X.12609)
+through its inclusion as a type of hierarchical effect.  The univariate version of
+the plateau relationship can be described through the use of the following parameters:
+
++ $\beta_1$ (where $\beta_1 > 0$) - Describing the magnitude of the ascending
+part of the plateau relationship
++ $\beta_2$ (where $\beta_2 > 0$) - Describing the magnitude of the descending
+part of the plateau relationship
++ $\hat{x}$ - Describing the location of the hypothetical apex of the plateau
+relationship on the x-axis
++ $\delta$ (where $\delta > 0$) - Describing the offset (on the $y$-axis of the
+plateau peak from the hypothetical apex
+
+The marginal response, $y$, then takes the following functional form:
+
+$$
+y \left( x \right) = \textrm{min} \left\{\left( x - \hat{x} \right) \beta_1, \left( \hat{x} - x \right) \beta_2, -\delta \right\}
+$$
+
+Plateau relationships can be ill-behaved in situations where there is little or no
+data to inform the posterior distribution of the ascending or descending components
+of the relationship.  The locations on the $x$-axis where the ascending or descending
+components drive the relationship are controlled by the parameterisation of the
+relationship and so this can result in poor mixing of MCMC samplers under certain
+conditions.  To avoid this we enforce some constraints on the plateau parameters
+such that, in situations where the ascending or descending components fall outside
+the range of the data, we enforce a conservative bias towards symmetric
+parameterisations.  This is done by defining an intermediate stochastic node,
+$\mathbf{z}$, that has the following distribution:
+
+$$
+\mathbf{z} \sim \mathcal{N}_2 \left( \mathbf{0}, \frac{1}{\tau} \left[\begin{matrix}
+1 & \rho \\
+\rho & 1
+\end{matrix}\right]  \right)
+$$
+and define
+
+$$
+\begin{align}
+\beta_1 &= \left| z_1 \right| \\
+\beta_2 &= \left| z_2 \right|
+\end{align}
+$$
+where $\tau$ ($\tau > 0$) and $\rho$ ($0 \leq \rho < 1$) are hyperparameters that define the scale of the ascending and descending coefficients and the correlation between them respectively.  The Cholesky decomposition of the variance-covariance matrix, $\mathbf{L}$ is therefore
+
+$$
+\mathbf{L} = \frac{1}{\sqrt{\tau}} \left[ \begin{matrix}
+1 & 0 \\
+\rho & \sqrt{1 - \rho^2}
+\end{matrix} \right]
+$$
+```{r setup}
+# library(PaGAn)
+```

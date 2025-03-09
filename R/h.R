@@ -31,9 +31,9 @@
 #'  \code{\link[nimble]{nimbleModel}}}
 #'  \item{\code{inits}}{A named list of starting values for model variables used
 #'  in the hierarchical effect and passed to \code{\link[nimble]{nimbleModel}}}
-#'  \code{monitors}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors}}{The nodes of the hierarchical effect to
 #'  monitor in the MCMC and passed to \code{\link[nimble]{configureMCMC}}}
-#'  \code{monitors2}{The nodes of the hierarchical effect to
+#'  \item{\code{monitors2}}{The nodes of the hierarchical effect to
 #'  monitor in the supplemental chain monitor in the MCMC and passed to
 #'  \code{\link[nimble]{configureMCMC}}}
 #'  \item{\code{initCode}}{A list of language objects to run upon initialisation
@@ -224,7 +224,6 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
     }
     attributes(modelOutput) <- outAttr
   }
-<<<<<<< HEAD
   ### 1.1.7 ---- Set the arguments of the projection function  ----
   if(!is.null(modelOutput$projFunc)) {
     # Retrieve the names of the arguments of the projection function
@@ -246,21 +245,20 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
           paste0(modelOutput$name, "proj", projFuncArgNames, modelOutput$suffix)
         ))
       }
-=======
-  ### 1.1.6 ---- Check the arguments of the projection function ----
-  if(!is.null(modelOutput$projFunc)) {
-    # Retrieve from the ellipsis arguments any that match the name of the arguments of
-    # the projection function
-    projFuncInputs <- processEllipsisArgs(methods::formalArgs(modelOutput$projFunc), ...)
-    if(length(projFuncInpus) > 0) {
-      # Add the arguments that have been provided as ellipsis arguments to the list of constants
-      # (renaming them using the effect name and suffix convention to avoid name clashes in the
-      # BUGS code that is generated)
-      names(projFuncInputs) <- paste0(modelOutput$name, names(projFuncInputs), modelOutput$suffix)
-      modelOutput$constants <- append(modelOutput$constants, projFuncInputs)
->>>>>>> 5f2e3692bedf9b60fb81dc8ee9f92a6ca61b18ba
     }
   }
+  # ### 1.1.6 ---- Check the arguments of the projection function ----
+  # if(!is.null(modelOutput$projFunc)) {
+  #   # Retrieve from the ellipsis arguments any that match the name of the arguments of
+  #   # the projection function
+  #   projFuncInputs <- processEllipsisArgs(methods::formalArgs(modelOutput$projFunc), ...)
+  #   if(length(projFuncInpus) > 0) {
+  #     # Add the arguments that have been provided as ellipsis arguments to the list of constants
+  #     # (renaming them using the effect name and suffix convention to avoid name clashes in the
+  #     # BUGS code that is generated)
+  #     names(projFuncInputs) <- paste0(modelOutput$name, names(projFuncInputs), modelOutput$suffix)
+  #   }
+  # }
   modelOutput
 }
 
@@ -273,7 +271,7 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
 #'
 #' @param var The variable around which the hierarchical effect will be defined.
 #' This can be a \code{data.frame}, \code{matrix}, or a vector containing the
-#' different levels to deine the effect over.
+#' different levels to define the effect over.
 #' @param centreCovs A logical scalar denoting whether the fixed effects in the
 #' model should be centred before the analysis: each covariate element is
 #' subtracted by its mean. \code{centreCovs} can also be a function with one
@@ -284,6 +282,8 @@ h <- function(..., model, parentSuffix = "", effName = NULL) {
 #' by its standard deviation. \code{scaleCovs} can also be a function with one
 #' argument that is a vector of covariate values. In this case the variable is
 #' instead scaled around the output of this function.
+#' @param effName A character scalar giving a name for the hierarchical effect
+#' being defined and used as name for the appropriate nodes
 #'
 #' @return A matrix object containing the transformation matrix
 #' @author Joseph D. Chipperfield, \email{joechip90@@googlemail.com}

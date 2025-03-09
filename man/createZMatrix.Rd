@@ -4,10 +4,12 @@
 \alias{createZMatrix}
 \title{Specify a Hierarchical Effect in Terms of a Transformation Matrix}
 \usage{
-createZMatrix(var, centreCovs = FALSE, scaleCovs = FALSE)
+createZMatrix(var, centreCovs = FALSE, scaleCovs = FALSE, effName = NULL)
 }
 \arguments{
-\item{var}{The variable around which the hierarchical effect will be defined}
+\item{var}{The variable around which the hierarchical effect will be defined.
+This can be a \code{data.frame}, \code{matrix}, or a vector containing the
+different levels to define the effect over.}
 
 \item{centreCovs}{A logical scalar denoting whether the fixed effects in the
 model should be centred before the analysis: each covariate element is
@@ -20,6 +22,9 @@ model should be scaled before the analysis: each covariate element is divided
 by its standard deviation. \code{scaleCovs} can also be a function with one
 argument that is a vector of covariate values. In this case the variable is
 instead scaled around the output of this function.}
+
+\item{effName}{A character scalar giving a name for the hierarchical effect
+being defined and used as name for the appropriate nodes}
 }
 \value{
 A matrix object containing the transformation matrix
